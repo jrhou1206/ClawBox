@@ -66,3 +66,10 @@ docs/pr-session-notes-*.md
 
 .cursor/
 .pnpm-store/
+
+# scripts
+
+scripts/sync-clawx-upstream.cmd
+scripts/sync-clawx-upstream.ps1
+
+UPSTREAM_SYNC_HISTORY.md
