@@ -748,7 +748,43 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
 }
 
 /**
- * Write the ClawBox gateway token into ~/.openclaw/openclaw.json.
+ * Read models.providers entries and agents.defaults.model from openclaw.json.
+ * Used by ClawX to seed the provider store when it's empty but providers are
+ * configured externally (e.g. via CLI or by editing openclaw.json directly).
+ */
+export async function getOpenClawProvidersConfig(): Promise<{
+  providers: Record<string, Record<string, unknown>>;
+  defaultModel: string | undefined;
+}> {
+  try {
+    const config = await readOpenClawJson();
+
+    const models = config.models as Record<string, unknown> | undefined;
+    const providers =
+      models?.providers && typeof models.providers === 'object'
+        ? (models.providers as Record<string, Record<string, unknown>>)
+        : {};
+
+    const agents = config.agents as Record<string, unknown> | undefined;
+    const defaults =
+      agents?.defaults && typeof agents.defaults === 'object'
+        ? (agents.defaults as Record<string, unknown>)
+        : undefined;
+    const modelConfig =
+      defaults?.model && typeof defaults.model === 'object'
+        ? (defaults.model as Record<string, unknown>)
+        : undefined;
+    const defaultModel =
+      typeof modelConfig?.primary === 'string' ? modelConfig.primary : undefined;
+
+    return { providers, defaultModel };
+  } catch {
+    return { providers: {}, defaultModel: undefined };
+  }
+}
+
+/**
+ * Write the ClawX gateway token into ~/.openclaw/openclaw.json.
  */
 export async function syncGatewayTokenToConfig(token: string): Promise<void> {
   return withConfigLock(async () => {
@@ -770,7 +806,7 @@ export async function syncGatewayTokenToConfig(token: string): Promise<void> {
     auth.token = token;
     gateway.auth = auth;
 
-    // Packaged ClawBox loads the renderer from file://, so the gateway must allow
+    // Packaged ClawX loads the renderer from file://, so the gateway must allow
     // that origin for the chat WebSocket handshake.
     const controlUi = (
       gateway.controlUi && typeof gateway.controlUi === 'object'
@@ -830,7 +866,7 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
  * Ensure session idle-reset is configured in ~/.openclaw/openclaw.json.
  *
  * By default OpenClaw resets the "main" session daily at 04:00 local time,
- * which means conversations disappear after roughly one day.  ClawBox sets
+ * which means conversations disappear after roughly one day.  ClawX sets
  * `session.idleMinutes` to 10 080 (7 days) so that conversations are
  * preserved for a week unless the user has explicitly configured their own
  * value.  When `idleMinutes` is set without `session.reset` /
@@ -931,7 +967,7 @@ export async function updateAgentModelProvider(
  * Removes known-invalid keys that cause OpenClaw's strict Zod validation
  * to reject the entire config on startup.  Uses a conservative **blocklist**
  * approach: only strips keys that are KNOWN to be misplaced by older
- * OpenClaw/ClawBox versions or external tools.
+ * OpenClaw/ClawX versions or external tools.
  *
  * Why blocklist instead of allowlist?
  *   • Allowlist (e.g. `VALID_SKILLS_KEYS`) would strip any NEW valid keys
@@ -1003,6 +1039,28 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
             }
           }
           if (modified) pluginsObj.load = validLoad;
+        } else if (pluginsObj.load && typeof pluginsObj.load === 'object' && !Array.isArray(pluginsObj.load)) {
+          // Handle nested shape: plugins.load.paths (array of absolute paths)
+          const loadObj = pluginsObj.load as Record<string, unknown>;
+          if (Array.isArray(loadObj.paths)) {
+            const validPaths: unknown[] = [];
+            const countBefore = loadObj.paths.length;
+            for (const p of loadObj.paths) {
+              if (typeof p === 'string' && p.startsWith('/')) {
+                if (p.includes('node_modules/openclaw/extensions') || !(await fileExists(p))) {
+                  console.log(`[sanitize] Removing stale/bundled plugin path "${p}" from plugins.load.paths`);
+                  modified = true;
+                } else {
+                  validPaths.push(p);
+                }
+              } else {
+                validPaths.push(p);
+              }
+            }
+            if (validPaths.length !== countBefore) {
+              loadObj.paths = validPaths;
+            }
+          }
         }
       }
     }
@@ -1024,7 +1082,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     // ── tools.web.search.kimi ─────────────────────────────────────
     // OpenClaw web_search(kimi) prioritizes tools.web.search.kimi.apiKey over
     // environment/auth-profiles. A stale inline key can cause persistent 401s.
-    // When ClawBox-managed moonshot provider exists, prefer centralized key
+    // When ClawX-managed moonshot provider exists, prefer centralized key
     // resolution and strip the inline key.
     const providers = ((config.models as Record<string, unknown> | undefined)?.providers as Record<string, unknown> | undefined) || {};
     if (providers[OPENCLAW_PROVIDER_KEY_MOONSHOT]) {
@@ -1045,7 +1103,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
     // ── tools.profile & sessions.visibility ───────────────────────
     // OpenClaw 3.8+ requires tools.profile = 'full' and tools.sessions.visibility = 'all'
-    // for ClawBox to properly integrate with its updated tool system.
+    // for ClawX to properly integrate with its updated tool system.
     const toolsConfig = (config.tools as Record<string, unknown> | undefined) || {};
     let toolsModified = false;
 
@@ -1177,7 +1235,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     // ── channels default-account migration ─────────────────────────
     // Most OpenClaw channel plugins read the default account's credentials
     // from the top level of `channels.<type>` (e.g. channels.feishu.appId),
-    // but ClawBox historically stored them only under `channels.<type>.accounts.default`.
+    // but ClawX historically stored them only under `channels.<type>.accounts.default`.
     // Mirror the default account credentials at the top level so plugins can
     // discover them.
     const channelsObj = config.channels as Record<string, Record<string, unknown>> | undefined;

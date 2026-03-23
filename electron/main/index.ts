@@ -16,7 +16,7 @@ import { warmupNetworkOptimization } from '../utils/uv-env';
 import { initTelemetry } from '../utils/telemetry';
 
 import { ClawHubService } from '../gateway/clawhub';
-import { ensureClawBoxContext, repairClawBoxOnlyBootstrapFiles } from '../utils/openclaw-workspace';
+import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
 import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToProfile } from '../utils/openclaw-cli';
 import { isQuitting, setQuitting } from './app-state';
 import { applyProxySettings } from './proxy';
@@ -27,6 +27,13 @@ import {
   createMainWindowFocusState,
   requestSecondInstanceFocus,
 } from './main-window-focus';
+import {
+  createQuitLifecycleState,
+  markQuitCleanupCompleted,
+  requestQuitLifecycleAction,
+} from './quit-lifecycle';
+import { createSignalQuitHandler } from './signal-quit';
+import { acquireProcessInstanceFileLock } from './process-instance-lock';
 import { getSetting } from '../utils/store';
 import { ensureBuiltinSkillsInstalled, ensurePreinstalledSkillsInstalled } from '../utils/skill-config';
 import { ensureAllBundledPluginsInstalled } from '../utils/plugin-install';
@@ -37,7 +44,7 @@ import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
 
-const WINDOWS_APP_USER_MODEL_ID = 'app.clawbox.desktop';
+const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 
 // Disable GPU hardware acceleration globally for maximum stability across
 // all GPU configurations (no GPU, integrated, discrete).
@@ -56,11 +63,11 @@ const WINDOWS_APP_USER_MODEL_ID = 'app.clawbox.desktop';
 app.disableHardwareAcceleration();
 
 // On Linux, set CHROME_DESKTOP so Chromium can find the correct .desktop file.
-// On Wayland this maps the running window to clawbox.desktop (→ icon + app grouping);
+// On Wayland this maps the running window to clawx.desktop (→ icon + app grouping);
 // on X11 it supplements the StartupWMClass matching.
 // Must be called before app.whenReady() / before any window is created.
 if (process.platform === 'linux') {
-  app.setDesktopName('clawbox.desktop');
+  app.setDesktopName('clawx.desktop');
 }
 
 // Prevent multiple instances of the app from running simultaneously.
@@ -68,10 +75,37 @@ if (process.platform === 'linux') {
 // same port, then each treats the other's gateway as "orphaned" and kills
 // it — creating an infinite kill/restart loop on Windows.
 // The losing process must exit immediately so it never reaches Gateway startup.
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
+const gotElectronLock = app.requestSingleInstanceLock();
+if (!gotElectronLock) {
+  console.info('[ClawX] Another instance already holds the single-instance lock; exiting duplicate process');
   app.exit(0);
 }
+let releaseProcessInstanceFileLock: () => void = () => {};
+let gotFileLock = true;
+if (gotElectronLock) {
+  try {
+    const fileLock = acquireProcessInstanceFileLock({
+      userDataDir: app.getPath('userData'),
+      lockName: 'clawx',
+    });
+    gotFileLock = fileLock.acquired;
+    releaseProcessInstanceFileLock = fileLock.release;
+    if (!fileLock.acquired) {
+      const ownerDescriptor = fileLock.ownerPid
+        ? `${fileLock.ownerFormat ?? 'legacy'} pid=${fileLock.ownerPid}`
+        : fileLock.ownerFormat === 'unknown'
+          ? 'unknown lock format/content'
+          : 'unknown owner';
+      console.info(
+        `[ClawX] Another instance already holds process lock (${fileLock.lockPath}, ${ownerDescriptor}); exiting duplicate process`,
+      );
+      app.exit(0);
+    }
+  } catch (error) {
+    console.warn('[ClawX] Failed to acquire process instance file lock; continuing with Electron single-instance lock only', error);
+  }
+}
+const gotTheLock = gotElectronLock && gotFileLock;
 
 // Global references
 let mainWindow: BrowserWindow | null = null;
@@ -80,6 +114,7 @@ let clawHubService!: ClawHubService;
 let hostEventBus!: HostEventBus;
 let hostApiServer: Server | null = null;
 const mainWindowFocusState = createMainWindowFocusState();
+const quitLifecycleState = createQuitLifecycleState();
 
 /**
  * Resolve the icons directory path (works in both dev and packaged mode)
@@ -113,6 +148,8 @@ function getAppIcon(): Electron.NativeImage | undefined {
  */
 function createWindow(): BrowserWindow {
   const isMac = process.platform === 'darwin';
+  const isWindows = process.platform === 'win32';
+  const useCustomTitleBar = isWindows;
 
   const win = new BrowserWindow({
     width: 1280,
@@ -127,9 +164,9 @@ function createWindow(): BrowserWindow {
       sandbox: false,
       webviewTag: true, // Enable <webview> for embedding OpenClaw Control UI
     },
-    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    titleBarStyle: isMac ? 'hiddenInset' : useCustomTitleBar ? 'hidden' : 'default',
     trafficLightPosition: isMac ? { x: 16, y: 16 } : undefined,
-    frame: isMac,
+    frame: isMac || !useCustomTitleBar,
     show: false,
   });
 
@@ -212,9 +249,9 @@ function createMainWindow(): BrowserWindow {
 async function initialize(): Promise<void> {
   // Initialize logger first
   logger.init();
-  logger.info('=== ClawBox Application Starting ===');
+  logger.info('=== ClawX Application Starting ===');
   logger.debug(
-    `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}`
+    `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}, pid=${process.pid}, ppid=${process.ppid}`
   );
 
   // Warm up network optimization (non-blocking)
@@ -275,10 +312,10 @@ async function initialize(): Promise<void> {
   // Note: Auto-check for updates is driven by the renderer (update store init)
   // so it respects the user's "Auto-check for updates" setting.
 
-  // Repair any bootstrap files that only contain ClawBox markers (no OpenClaw
-  // template content). This fixes a race condition where ensureClawBoxContext()
+  // Repair any bootstrap files that only contain ClawX markers (no OpenClaw
+  // template content). This fixes a race condition where ensureClawXContext()
   // previously created the file before the gateway could seed the full template.
-  void repairClawBoxOnlyBootstrapFiles().catch((error) => {
+  void repairClawXOnlyBootstrapFiles().catch((error) => {
     logger.warn('Failed to repair bootstrap files:', error);
   });
 
@@ -295,7 +332,7 @@ async function initialize(): Promise<void> {
     logger.warn('Failed to install preinstalled skills:', error);
   });
 
-  // Pre-deploy/upgrade bundled OpenClaw plugins (dingtalk, wecom, qqbot, feishu)
+  // Pre-deploy/upgrade bundled OpenClaw plugins (dingtalk, wecom, qqbot, feishu, wechat)
   // to ~/.openclaw/extensions/ so they are always up-to-date after an app update.
   void ensureAllBundledPluginsInstalled().catch((error) => {
     logger.warn('Failed to install/upgrade bundled plugins:', error);
@@ -306,8 +343,8 @@ async function initialize(): Promise<void> {
   gatewayManager.on('status', (status: { state: string }) => {
     hostEventBus.emit('gateway:status', status);
     if (status.state === 'running') {
-      void ensureClawBoxContext().catch((error) => {
-        logger.warn('Failed to re-merge ClawBox context after gateway reconnect:', error);
+      void ensureClawXContext().catch((error) => {
+        logger.warn('Failed to re-merge ClawX context after gateway reconnect:', error);
       });
     }
   });
@@ -392,11 +429,11 @@ async function initialize(): Promise<void> {
     logger.info('Gateway auto-start disabled in settings');
   }
 
-  // Merge ClawBox context snippets into the workspace bootstrap files.
+  // Merge ClawX context snippets into the workspace bootstrap files.
   // The gateway seeds workspace files asynchronously after its HTTP server
-  // is ready, so ensureClawBoxContext will retry until the target files appear.
-  void ensureClawBoxContext().catch((error) => {
-    logger.warn('Failed to merge ClawBox context into workspace:', error);
+  // is ready, so ensureClawXContext will retry until the target files appear.
+  void ensureClawXContext().catch((error) => {
+    logger.warn('Failed to merge ClawX context into workspace:', error);
   });
 
   // Auto-install openclaw CLI and shell completions (non-blocking).
@@ -411,6 +448,22 @@ async function initialize(): Promise<void> {
 }
 
 if (gotTheLock) {
+  const requestQuitOnSignal = createSignalQuitHandler({
+    logInfo: (message) => logger.info(message),
+    requestQuit: () => app.quit(),
+  });
+
+  process.on('exit', () => {
+    releaseProcessInstanceFileLock();
+  });
+
+  process.once('SIGINT', () => requestQuitOnSignal('SIGINT'));
+  process.once('SIGTERM', () => requestQuitOnSignal('SIGTERM'));
+
+  app.on('will-quit', () => {
+    releaseProcessInstanceFileLock();
+  });
+
   if (process.platform === 'win32') {
     app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
   }
@@ -421,7 +474,7 @@ if (gotTheLock) {
 
   // When a second instance is launched, focus the existing window instead.
   app.on('second-instance', () => {
-    logger.info('Second ClawBox instance detected; redirecting to the existing window');
+    logger.info('Second ClawX instance detected; redirecting to the existing window');
 
     const focusRequest = requestSecondInstanceFocus(
       mainWindowFocusState,
@@ -459,15 +512,69 @@ if (gotTheLock) {
     }
   });
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
     setQuitting();
+    const action = requestQuitLifecycleAction(quitLifecycleState);
+
+    if (action === 'allow-quit') {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (action === 'cleanup-in-progress') {
+      logger.debug('Quit requested while cleanup already in progress; waiting for shutdown task to finish');
+      return;
+    }
+
     hostEventBus.closeAll();
     hostApiServer?.close();
-    // Fire-and-forget: do not await gatewayManager.stop() here.
-    // Awaiting inside before-quit can stall Electron's quit sequence.
-    void gatewayManager.stop().catch((err) => {
+
+    const stopPromise = gatewayManager.stop().catch((err) => {
       logger.warn('gatewayManager.stop() error during quit:', err);
     });
+    const timeoutPromise = new Promise<'timeout'>((resolve) => {
+      setTimeout(() => resolve('timeout'), 5000);
+    });
+
+    void Promise.race([stopPromise.then(() => 'stopped' as const), timeoutPromise]).then((result) => {
+      if (result === 'timeout') {
+        logger.warn('Gateway shutdown timed out during app quit; proceeding with forced quit');
+        void gatewayManager.forceTerminateOwnedProcessForQuit().then((terminated) => {
+          if (terminated) {
+            logger.warn('Forced gateway process termination completed after quit timeout');
+          }
+        }).catch((err) => {
+          logger.warn('Forced gateway termination failed after quit timeout:', err);
+        });
+      }
+      markQuitCleanupCompleted(quitLifecycleState);
+      app.quit();
+    });
+  });
+
+  // Best-effort Gateway cleanup on unexpected crashes.
+  // These handlers attempt to terminate the Gateway child process within a
+  // short timeout before force-exiting, preventing orphaned processes.
+  const emergencyGatewayCleanup = (reason: string, error: unknown): void => {
+    logger.error(`${reason}:`, error);
+    try {
+      void gatewayManager?.stop().catch(() => { /* ignore */ });
+    } catch {
+      // ignore — stop() may not be callable if state is corrupted
+    }
+    // Give Gateway stop a brief window, then force-exit.
+    setTimeout(() => {
+      process.exit(1);
+    }, 3000).unref();
+  };
+
+  process.on('uncaughtException', (error) => {
+    emergencyGatewayCleanup('Uncaught exception in main process', error);
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    emergencyGatewayCleanup('Unhandled promise rejection in main process', reason);
   });
 }
 

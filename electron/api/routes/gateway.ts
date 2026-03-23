@@ -1,42 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { PORTS } from '../../utils/config';
 import { buildOpenClawControlUiUrl } from '../../utils/openclaw-control-ui';
 import { getSetting } from '../../utils/store';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
-
-const execFileAsync = promisify(execFile);
-const PROCESS_STATS_TIMEOUT_MS = 5000;
-
-async function getProcessRssBytes(pid: number): Promise<number | null> {
-  const safePid = Math.floor(pid);
-  if (!Number.isFinite(safePid) || safePid <= 0) return null;
-
-  try {
-    if (process.platform === 'win32') {
-      const psCommand = `(Get-Process -Id ${safePid}).WorkingSet64`;
-      const { stdout } = await execFileAsync(
-        'powershell.exe',
-        ['-NoProfile', '-Command', psCommand],
-        { timeout: PROCESS_STATS_TIMEOUT_MS },
-      );
-      const value = Number(String(stdout).trim());
-      return Number.isFinite(value) ? value : null;
-    }
-
-    const { stdout } = await execFileAsync(
-      'ps',
-      ['-o', 'rss=', '-p', String(safePid)],
-      { timeout: PROCESS_STATS_TIMEOUT_MS },
-    );
-    const kb = Number(String(stdout).trim());
-    return Number.isFinite(kb) ? kb * 1024 : null;
-  } catch {
-    return null;
-  }
-}
 
 export async function handleGatewayRoutes(
   req: IncomingMessage,
@@ -58,14 +25,6 @@ export async function handleGatewayRoutes(
 
   if (url.pathname === '/api/gateway/status' && req.method === 'GET') {
     sendJson(res, 200, ctx.gatewayManager.getStatus());
-    return true;
-  }
-
-  if (url.pathname === '/api/gateway/process-stats' && req.method === 'GET') {
-    const status = ctx.gatewayManager.getStatus();
-    const pid = typeof status.pid === 'number' && Number.isFinite(status.pid) ? status.pid : null;
-    const rssBytes = pid ? await getProcessRssBytes(pid) : null;
-    sendJson(res, 200, { pid, rssBytes });
     return true;
   }
 
@@ -169,5 +128,3 @@ export async function handleGatewayRoutes(
 
   return false;
 }
-
-

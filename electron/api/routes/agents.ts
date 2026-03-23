@@ -1,7 +1,4 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { constants } from 'node:fs';
-import { access, open, readdir, stat } from 'node:fs/promises';
-import { extname, join } from 'node:path';
 import {
   assignChannelToAgent,
   clearChannelBinding,
@@ -13,57 +10,10 @@ import {
   updateAgentName,
 } from '../../utils/agent-config';
 import { deleteChannelAccountConfig } from '../../utils/channel-config';
-import { expandPath } from '../../utils/paths';
 import { syncAllProviderAuthToRuntime } from '../../services/providers/provider-runtime-sync';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
 
-const TEXT_PREVIEW_EXTS = new Set([
-  '.md',
-  '.txt',
-  '.json',
-  '.yaml',
-  '.yml',
-  '.toml',
-  '.ini',
-  '.log',
-]);
-
-const MAX_PREVIEW_BYTES = 4096;
-const MAX_ROLE_BYTES = 200000;
-const MAX_FILES_LIMIT = 200;
-
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await access(path, constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readFilePrefix(path: string, maxBytes: number): Promise<{ text: string; truncated: boolean }> {
-  const handle = await open(path, 'r');
-  try {
-    const safeMaxBytes = Math.max(0, Math.floor(maxBytes));
-    const buffer = Buffer.alloc(safeMaxBytes + 1);
-    const result = await handle.read(buffer, 0, buffer.length, 0);
-    const bytesRead = result.bytesRead ?? 0;
-    const truncated = bytesRead > safeMaxBytes;
-    const text = buffer.toString('utf8', 0, truncated ? safeMaxBytes : bytesRead);
-    return { text, truncated };
-  } finally {
-    await handle.close();
-  }
-}
-
-function formatPreview(text: string, truncated: boolean): string {
-  const lines = text.replace(/\r\n/g, '\n').split('\n');
-  const preview = lines.slice(0, 14).join('\n').trimEnd();
-  if (!preview) return '';
-  const hasMoreLines = lines.length > 14;
-  return (hasMoreLines || truncated) ? `${preview}\n…` : preview;
-}
 function scheduleGatewayReload(ctx: HostApiContext, reason: string): void {
   if (ctx.gatewayManager.getStatus().state !== 'stopped') {
     ctx.gatewayManager.debouncedReload();
@@ -86,7 +36,7 @@ const execAsync = promisify(exec);
  * stale bot connections is to kill the Gateway process entirely and
  * spawn a fresh one that reads the updated openclaw.json from scratch.
  */
-async function restartGatewayForAgentDeletion(ctx: HostApiContext): Promise<void> {
+export async function restartGatewayForAgentDeletion(ctx: HostApiContext): Promise<void> {
   try {
     // Capture the PID of the running Gateway BEFORE stop() clears it.
     const status = ctx.gatewayManager.getStatus();
@@ -100,10 +50,14 @@ async function restartGatewayForAgentDeletion(ctx: HostApiContext): Promise<void
     // and the old process stays alive with its stale channel connections.
     if (pid) {
       try {
-        process.kill(pid, 'SIGTERM');
-        // Give it a moment to die
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        try { process.kill(pid, 0); process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
+        if (process.platform === 'win32') {
+          await execAsync(`taskkill /F /PID ${pid} /T`);
+        } else {
+          process.kill(pid, 'SIGTERM');
+          // Give it a moment to die
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          try { process.kill(pid, 0); process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
+        }
       } catch {
         // process already gone – that's fine
       }
@@ -112,7 +66,7 @@ async function restartGatewayForAgentDeletion(ctx: HostApiContext): Promise<void
       // a previous pnpm dev run), forcefully kill whatever is on the port.
       try {
         if (process.platform === 'darwin' || process.platform === 'linux') {
-          // MUST use -sTCP:LISTEN. Otherwise lsof returns the client process (ClawBox itself) 
+          // MUST use -sTCP:LISTEN. Otherwise lsof returns the client process (ClawX itself) 
           // that has an ESTABLISHED WebSocket connection to the port, causing us to kill ourselves.
           const { stdout } = await execAsync(`lsof -t -i :${port} -sTCP:LISTEN`);
           const pids = stdout.trim().split('\n').filter(Boolean);
@@ -135,7 +89,7 @@ async function restartGatewayForAgentDeletion(ctx: HostApiContext): Promise<void
             }
           }
           for (const p of pids) {
-            try { await execAsync(`taskkill /F /PID ${p}`); } catch { /* ignore */ }
+            try { await execAsync(`taskkill /F /PID ${p} /T`); } catch { /* ignore */ }
           }
         }
       } catch {
@@ -161,100 +115,6 @@ export async function handleAgentRoutes(
     return true;
   }
 
-  if (url.pathname.startsWith('/api/agents/') && req.method === 'GET') {
-    const suffix = url.pathname.slice('/api/agents/'.length);
-    const parts = suffix.split('/').filter(Boolean);
-    const agentId = parts.length > 0 ? decodeURIComponent(parts[0]) : '';
-
-    if (parts.length === 2 && (parts[1] === 'files' || parts[1] === 'role')) {
-      const snapshot = await listAgentsSnapshot();
-      const agent = snapshot.agents.find((a) => a.id === agentId)
-        ?? snapshot.agents.find((a) => a.id.toLowerCase() === agentId.toLowerCase());
-      if (!agent) {
-        sendJson(res, 404, { error: `Agent not found: ${agentId}` });
-        return true;
-      }
-
-      const workspaceDir = expandPath(agent.workspace);
-      if (!(await fileExists(workspaceDir))) {
-        sendJson(res, 200, parts[1] === 'files'
-          ? { files: [] }
-          : { content: '', fileName: null, filePath: null, truncated: false });
-        return true;
-      }
-
-      if (parts[1] === 'files') {
-        const rawLimit = Number(url.searchParams.get('limit') || '60');
-        const limit = Number.isFinite(rawLimit)
-          ? Math.min(Math.max(Math.floor(rawLimit), 1), MAX_FILES_LIMIT)
-          : 60;
-
-        try {
-          const entries = await readdir(workspaceDir, { withFileTypes: true });
-          const candidates = entries
-            .filter((entry) => entry.isFile())
-            .map((entry) => entry.name);
-
-          const results = await Promise.all(
-            candidates.map(async (name) => {
-              const path = join(workspaceDir, name);
-              try {
-                const s = await stat(path);
-                const ext = extname(name).toLowerCase();
-                let previewText: string | null = null;
-                if (TEXT_PREVIEW_EXTS.has(ext) && s.size > 0 && s.size <= 1000000) {
-                  const { text, truncated } = await readFilePrefix(path, MAX_PREVIEW_BYTES);
-                  const formatted = formatPreview(text, truncated);
-                  previewText = formatted || null;
-                }
-                return {
-                  name,
-                  path,
-                  size: s.size,
-                  updatedAtMs: s.mtimeMs,
-                  previewText,
-                };
-              } catch {
-                return null;
-              }
-            }),
-          );
-
-          const files = results
-            .filter((item): item is NonNullable<typeof item> => item != null)
-            .sort((a, b) => (b.updatedAtMs ?? 0) - (a.updatedAtMs ?? 0))
-            .slice(0, limit);
-          sendJson(res, 200, { files });
-        } catch (error) {
-          sendJson(res, 500, { error: String(error) });
-        }
-        return true;
-      }
-
-      try {
-        const candidates = ['SOUL.md', 'IDENTITY.md', 'USER.md', 'AGENTS.md'];
-        for (const fileName of candidates) {
-          const filePath = join(workspaceDir, fileName);
-          if (!(await fileExists(filePath))) continue;
-          const s = await stat(filePath);
-          const maxBytes = Math.min(MAX_ROLE_BYTES, Math.max(1, Math.floor(s.size)));
-          const { text, truncated } = await readFilePrefix(filePath, maxBytes);
-          sendJson(res, 200, {
-            content: text,
-            fileName,
-            filePath,
-            truncated: truncated || s.size > MAX_ROLE_BYTES,
-          });
-          return true;
-        }
-
-        sendJson(res, 200, { content: '', fileName: null, filePath: null, truncated: false });
-      } catch (error) {
-        sendJson(res, 500, { error: String(error) });
-      }
-      return true;
-    }
-  }
   if (url.pathname === '/api/agents' && req.method === 'POST') {
     try {
       const body = await parseJsonBody<{ name: string }>(req);
@@ -364,4 +224,3 @@ export async function handleAgentRoutes(
 
   return false;
 }
-

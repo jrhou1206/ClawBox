@@ -1,12 +1,13 @@
-import { readFile, rm } from 'fs/promises';
+import { existsSync } from 'fs';
+import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { testHome, testUserData, mockLoggerWarn, mockLoggerInfo, mockLoggerError } = vi.hoisted(() => {
   const suffix = Math.random().toString(36).slice(2);
   return {
-    testHome: `/tmp/clawbox-channel-config-${suffix}`,
-    testUserData: `/tmp/clawbox-channel-config-user-data-${suffix}`,
+    testHome: `/tmp/clawx-channel-config-${suffix}`,
+    testUserData: `/tmp/clawx-channel-config-user-data-${suffix}`,
     mockLoggerWarn: vi.fn(),
     mockLoggerInfo: vi.fn(),
     mockLoggerError: vi.fn(),
@@ -156,5 +157,40 @@ describe('WeCom plugin configuration', () => {
     
     expect(plugins.allow).toContain('wecom');
     expect(plugins.entries['wecom'].enabled).toBe(true);
+  });
+});
+
+describe('WeChat dangling plugin cleanup', () => {
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.resetModules();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('removes dangling openclaw-weixin plugin registration and state when no channel config exists', async () => {
+    const { cleanupDanglingWeChatPluginState, writeOpenClawConfig } = await import('@electron/utils/channel-config');
+
+    await writeOpenClawConfig({
+      plugins: {
+        enabled: true,
+        allow: ['openclaw-weixin'],
+        entries: {
+          'openclaw-weixin': { enabled: true },
+        },
+      },
+    });
+
+    const staleStateDir = join(testHome, '.openclaw', 'openclaw-weixin', 'accounts');
+    await mkdir(staleStateDir, { recursive: true });
+    await writeFile(join(staleStateDir, 'bot-im-bot.json'), JSON.stringify({ token: 'stale-token' }), 'utf8');
+    await writeFile(join(testHome, '.openclaw', 'openclaw-weixin', 'accounts.json'), JSON.stringify(['bot-im-bot']), 'utf8');
+
+    const result = await cleanupDanglingWeChatPluginState();
+    expect(result.cleanedDanglingState).toBe(true);
+
+    const config = await readOpenClawJson();
+    expect(config.plugins).toBeUndefined();
+    expect(existsSync(join(testHome, '.openclaw', 'openclaw-weixin'))).toBe(false);
   });
 });

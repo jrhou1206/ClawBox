@@ -15,6 +15,9 @@ const HOST_EVENT_TO_IPC_CHANNEL: Record<string, string> = {
   'channel:whatsapp-qr': 'channel:whatsapp-qr',
   'channel:whatsapp-success': 'channel:whatsapp-success',
   'channel:whatsapp-error': 'channel:whatsapp-error',
+  'channel:wechat-qr': 'channel:wechat-qr',
+  'channel:wechat-success': 'channel:wechat-success',
+  'channel:wechat-error': 'channel:wechat-error',
 };
 
 function getEventSource(): EventSource {
@@ -26,7 +29,7 @@ function getEventSource(): EventSource {
 
 function allowSseFallback(): boolean {
   try {
-    return window.localStorage.getItem('clawbox:allow-sse-fallback') === '1';
+    return window.localStorage.getItem('clawx:allow-sse-fallback') === '1';
   } catch {
     return false;
   }

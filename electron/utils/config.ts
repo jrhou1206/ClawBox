@@ -7,14 +7,14 @@
  * Port configuration
  */
 export const PORTS = {
-  /** ClawBox GUI development server port */
-  CLAWBOX_DEV: 5173,
+  /** ClawX GUI development server port */
+  CLAWX_DEV: 5173,
   
-  /** ClawBox GUI production port (for reference) */
-  CLAWBOX_GUI: 23333,
+  /** ClawX GUI production port (for reference) */
+  CLAWX_GUI: 23333,
 
   /** Local host API server port */
-  CLAWBOX_HOST_API: 3210,
+  CLAWX_HOST_API: 3210,
   
   /** OpenClaw Gateway port */
   OPENCLAW_GATEWAY: 18789,
@@ -24,7 +24,7 @@ export const PORTS = {
  * Get port from environment or default
  */
 export function getPort(key: keyof typeof PORTS): number {
-  const envKey = `CLAWBOX_PORT_${key}`;
+  const envKey = `CLAWX_PORT_${key}`;
   const envValue = process.env[envKey];
   return envValue ? parseInt(envValue, 10) : PORTS[key];
 }
@@ -36,11 +36,11 @@ export const APP_PATHS = {
   /** OpenClaw configuration directory */
   OPENCLAW_CONFIG: '~/.openclaw',
   
-  /** ClawBox configuration directory */
-  CLAWBOX_CONFIG: '~/.clawbox',
+  /** ClawX configuration directory */
+  CLAWX_CONFIG: '~/.clawx',
   
   /** Log files directory */
-  LOGS: '~/.clawbox/logs',
+  LOGS: '~/.clawx/logs',
 } as const;
 
 /**

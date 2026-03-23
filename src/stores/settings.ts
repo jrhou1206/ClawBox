@@ -3,14 +3,9 @@
  * Manages application settings
  */
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
 import i18n from '@/i18n';
 import { hostApiFetch } from '@/lib/host-api';
-import {
-  getLocalStorageItemWithLegacy,
-  removeLocalStorageItemWithLegacy,
-  setLocalStorageItemWithLegacy,
-} from '@/lib/local-storage-compat';
 import { resolveSupportedLanguage } from '../../shared/language';
 
 type Theme = 'light' | 'dark' | 'system';
@@ -95,29 +90,6 @@ const defaultSettings = {
   setupComplete: false,
 };
 
-const SETTINGS_STORAGE_KEY = 'clawx-settings';
-const LEGACY_SETTINGS_STORAGE_KEY = 'clawbox-settings';
-const settingsStorage = createJSONStorage(() => ({
-  getItem: (name: string) => getLocalStorageItemWithLegacy(
-    name,
-    name === SETTINGS_STORAGE_KEY ? LEGACY_SETTINGS_STORAGE_KEY : undefined,
-  ),
-  setItem: (name: string, value: string) => {
-    if (name === SETTINGS_STORAGE_KEY) {
-      setLocalStorageItemWithLegacy(name, LEGACY_SETTINGS_STORAGE_KEY, value);
-      return;
-    }
-    setLocalStorageItemWithLegacy(name, undefined, value);
-  },
-  removeItem: (name: string) => {
-    if (name === SETTINGS_STORAGE_KEY) {
-      removeLocalStorageItemWithLegacy(name, LEGACY_SETTINGS_STORAGE_KEY);
-      return;
-    }
-    removeLocalStorageItemWithLegacy(name);
-  },
-}));
-
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
@@ -143,7 +115,13 @@ export const useSettingsStore = create<SettingsState>()(
         }
       },
 
-      setTheme: (theme) => set({ theme }),
+      setTheme: (theme) => {
+        set({ theme });
+        void hostApiFetch('/api/settings/theme', {
+          method: 'PUT',
+          body: JSON.stringify({ value: theme }),
+        }).catch(() => { });
+      },
       setLanguage: (language) => {
         const resolvedLanguage = resolveSupportedLanguage(language);
         i18n.changeLanguage(resolvedLanguage);
@@ -201,21 +179,22 @@ export const useSettingsStore = create<SettingsState>()(
       },
       togglePinnedAgent: (agentId) => set((state) => {
         const id = agentId.trim();
-        if (!id) return {};
+        if (!id) {
+          return {};
+        }
+
         const existing = state.pinnedAgentIds ?? [];
         if (existing.includes(id)) {
           return { pinnedAgentIds: existing.filter((item) => item !== id) };
         }
+
         return { pinnedAgentIds: [id, ...existing] };
       }),
       markSetupComplete: () => set({ setupComplete: true }),
       resetSettings: () => set(defaultSettings),
     }),
     {
-      name: SETTINGS_STORAGE_KEY,
-      storage: settingsStorage,
+      name: 'clawx-settings',
     }
   )
 );
-
-

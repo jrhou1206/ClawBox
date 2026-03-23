@@ -4,7 +4,6 @@
  */
 import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
 import { existsSync } from 'node:fs';
-import * as os from 'node:os';
 import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
 import crypto from 'node:crypto';
@@ -20,6 +19,7 @@ import {
   saveProviderKeyToOpenClaw,
   removeProviderFromOpenClaw,
 } from '../utils/openclaw-auth';
+import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';
 import { logger } from '../utils/logger';
 import {
@@ -181,7 +181,7 @@ function registerHostApiProxyHandlers(): void {
         }
       }
 
-      const response = await proxyAwareFetch(`http://127.0.0.1:${PORTS.CLAWBOX_HOST_API}${path}`, {
+      const response = await proxyAwareFetch(`http://127.0.0.1:${PORTS.CLAWX_HOST_API}${path}`, {
         method,
         headers,
         body,
@@ -241,6 +241,7 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
   const providerService = getProviderService();
   const handleProxySettingsChange = async () => {
     const settings = await getAllSettings();
+    await syncProxyConfigToOpenClaw(settings, { preserveExistingWhenDisabled: false });
     await applyProxySettings(settings);
     if (gatewayManager.getStatus().state === 'running') {
       await gatewayManager.restart();
@@ -922,7 +923,7 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
   });
 
   // Create a new cron job
-  // UI-created tasks have no delivery target — results go to the ClawBox chat page.
+  // UI-created tasks have no delivery target — results go to the ClawX chat page.
   // Tasks created via external channels (Feishu, Discord, etc.) are handled
   // directly by the OpenClaw Gateway and do not pass through this IPC handler.
   ipcMain.handle('cron:create', async (_, input: {
@@ -939,7 +940,7 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
         enabled: input.enabled ?? true,
         wakeMode: 'next-heartbeat',
         sessionTarget: 'isolated',
-        // UI-created jobs deliver results via ClawBox WebSocket chat events,
+        // UI-created jobs deliver results via ClawX WebSocket chat events,
         // not external messaging channels.  Setting mode='none' prevents
         // the Gateway from attempting channel delivery (which would fail
         // with "Channel is required" when no channels are configured).
@@ -1362,9 +1363,10 @@ function registerGatewayHandlers(
  * For checking package status and channel configuration
  */
 function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
-  // Keep reload-first for feishu to avoid restart storms when channel auth/network is flaky.
-  // GatewayManager.reload() already falls back to restart when reload is unhealthy.
-  const forceRestartChannels = new Set(['dingtalk', 'wecom', 'whatsapp']);
+  // Plugin-based channels require a full Gateway process restart to properly
+  // initialize / tear-down plugin connections.  SIGUSR1 in-process reload is
+  // not sufficient for channel plugins (see restartGatewayForAgentDeletion).
+  const forceRestartChannels = new Set(['dingtalk', 'wecom', 'whatsapp', 'feishu', 'qqbot']);
 
   const scheduleGatewayChannelRestart = (reason: string): void => {
     if (gatewayManager.getStatus().state !== 'stopped') {
@@ -1971,7 +1973,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
         const resolvedProtocol = options?.apiProtocol || provider?.apiProtocol;
 
-        console.log(`[clawbox-validate] validating provider type: ${providerType}`);
+        console.log(`[clawx-validate] validating provider type: ${providerType}`);
         return await validateApiKeyWithProvider(providerType, apiKey, {
           baseUrl: resolvedBaseUrl,
           apiProtocol: resolvedProtocol,
@@ -2116,26 +2118,12 @@ function registerAppHandlers(): void {
     app.relaunch();
     app.quit();
   });
-
-  // System info (local machine)
-  ipcMain.handle('app:systemInfo', () => {
-    const cpus = os.cpus();
-    return {
-      osName: `${os.type()} ${os.release()}`,
-      arch: os.arch(),
-      cpuModel: cpus.length > 0 ? cpus[0].model : '--',
-      cpuCores: cpus.length,
-      totalMemory: os.totalmem(),
-      freeMemory: os.freemem(),
-      hostname: os.hostname(),
-      nodeVersion: process.versions.node,
-    };
-  });
 }
 
 function registerSettingsHandlers(gatewayManager: GatewayManager): void {
   const handleProxySettingsChange = async () => {
     const settings = await getAllSettings();
+    await syncProxyConfigToOpenClaw(settings, { preserveExistingWhenDisabled: false });
     await applyProxySettings(settings);
     if (gatewayManager.getStatus().state === 'running') {
       await gatewayManager.restart();
@@ -2210,7 +2198,7 @@ function registerUsageHandlers(): void {
   });
 }
 /**
- * Window control handlers (for custom title bar on Windows/Linux)
+ * Window control handlers (for custom title bar on Windows)
  */
 function registerWindowHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('window:minimize', () => {
@@ -2575,5 +2563,3 @@ function registerSessionHandlers(): void {
     }
   });
 }
-
-

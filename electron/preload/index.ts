@@ -41,7 +41,6 @@ const electronAPI = {
         'app:name',
         'app:getPath',
         'app:platform',
-        'app:systemInfo',
         'app:quit',
         'app:relaunch',
         'app:request',
@@ -160,6 +159,9 @@ const electronAPI = {
         'channel:whatsapp-qr',
         'channel:whatsapp-success',
         'channel:whatsapp-error',
+        'channel:wechat-qr',
+        'channel:wechat-success',
+        'channel:wechat-error',
         'gateway:exit',
         'gateway:error',
         'navigate',
@@ -204,6 +206,12 @@ const electronAPI = {
         'gateway:notification',
         'gateway:channel-status',
         'gateway:chat-message',
+        'channel:whatsapp-qr',
+        'channel:whatsapp-success',
+        'channel:whatsapp-error',
+        'channel:wechat-qr',
+        'channel:wechat-success',
+        'channel:wechat-error',
         'gateway:exit',
         'gateway:error',
         'navigate',
@@ -264,4 +272,3 @@ contextBridge.exposeInMainWorld('electron', electronAPI);
 
 // Type declarations for the renderer process
 export type ElectronAPI = typeof electronAPI;
-

@@ -31,6 +31,12 @@ function quoteForPowerShell(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+function getPackagedWindowsNodePath(): string | null {
+  if (!app.isPackaged || process.platform !== 'win32') return null;
+  const nodePath = join(process.resourcesPath, 'bin', 'node.exe');
+  return existsSync(nodePath) ? nodePath : null;
+}
+
 // ── CLI command string (for display / copy) ──────────────────────────────────
 
 export function getOpenClawCliCommand(): string {
@@ -69,7 +75,12 @@ export function getOpenClawCliCommand(): string {
       const cliDir = join(process.resourcesPath, 'cli');
       const cmdPath = join(cliDir, 'openclaw.cmd');
       if (existsSync(cmdPath)) {
-        return quoteForPowerShell(cmdPath);
+        return `& ${quoteForPowerShell(cmdPath)}`;
+      }
+
+      const bundledNode = getPackagedWindowsNodePath();
+      if (bundledNode) {
+        return `& ${quoteForPowerShell(bundledNode)} ${quoteForPowerShell(entryPath)}`;
       }
     }
 
@@ -261,8 +272,8 @@ function ensureLocalBinInPath(): void {
     if (content.includes(marker)) return;
 
     const line = shell.includes('fish')
-      ? '\n# Added by ClawBox\nfish_add_path "$HOME/.local/bin"\n'
-      : '\n# Added by ClawBox\nexport PATH="$HOME/.local/bin:$PATH"\n';
+      ? '\n# Added by ClawX\nfish_add_path "$HOME/.local/bin"\n'
+      : '\n# Added by ClawX\nexport PATH="$HOME/.local/bin:$PATH"\n';
 
     appendFileSync(profileFile, line);
     logger.info(`Added ~/.local/bin to PATH in ${profileFile}`);
@@ -345,7 +356,7 @@ export function generateCompletionCache(): void {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       OPENCLAW_NO_RESPAWN: '1',
-      OPENCLAW_EMBEDDED_IN: 'ClawBox',
+      OPENCLAW_EMBEDDED_IN: 'ClawX',
     },
     stdio: 'ignore',
     detached: false,
@@ -382,7 +393,7 @@ export function installCompletionToProfile(): void {
         ...process.env,
         ELECTRON_RUN_AS_NODE: '1',
         OPENCLAW_NO_RESPAWN: '1',
-        OPENCLAW_EMBEDDED_IN: 'ClawBox',
+        OPENCLAW_EMBEDDED_IN: 'ClawX',
       },
       stdio: 'ignore',
       detached: false,
