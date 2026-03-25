@@ -17,6 +17,12 @@
         "hideThinking": "思考を非表示",
         "currentAgent": "現在の会話相手: {{agent}}"
     },
+    "status": {
+        "gatewayStartingTitle": "ゲートウェイを起動しています",
+        "gatewayStartingMessage": "再起動を含む起動処理中です。準備ができると会話状態は自動的に再同期されます。",
+        "gatewayReconnectingTitle": "ゲートウェイを再接続しています",
+        "gatewayReconnectingMessage": "接続が戻ると会話状態は自動的に再同期されます。しばらくお待ちください。"
+    },
     "composer": {
         "attachFiles": "ファイルを添付",
         "pickAgent": "Agent を選択",

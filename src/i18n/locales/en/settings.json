@@ -22,6 +22,23 @@
       "multiAccountReady": "Multi-account ready",
       "singletonVendor": "Single-account vendor"
     },
+    "layout": {
+      "vendors": "Vendors",
+      "vendorListDesc": "Choose a vendor on the left to inspect model names and connected models.",
+      "aliasesCount": "{{count}} model names",
+      "modelsCount": "{{count}} models",
+      "notConnected": "Not connected",
+      "addModel": "Add Model",
+      "addConnection": "Add Model",
+      "connectNow": "Add Model",
+      "emptySelectionTitle": "Choose a vendor from the left to get started",
+      "emptySelectionDesc": "After you select a vendor, the right side shows connected models grouped by model name. If the vendor has no models yet, the connect dialog opens immediately.",
+      "vendorSummary": "{{aliasCount}} model names · {{modelCount}} models",
+      "vendorEmptyTitle": "No model names connected for {{vendor}} yet",
+      "vendorEmptyDesc": "Add a model connection for this vendor, then fill in the model name, API key, base URL, and model settings.",
+      "editConnectionTitle": "Edit Connection",
+      "editConnectionDesc": "Adjust connection settings, fallback routing, and API key for {{name}}."
+    },
     "authModes": {
       "apiKey": "API Key",
       "oauthDevice": "OAuth Device",
@@ -41,12 +58,13 @@
       "cta": "Add Your First Provider"
     },
     "dialog": {
-      "title": "Add AI Provider",
-      "desc": "Configure a new AI model provider",
-      "displayName": "Display Name",
+      "title": "Add Model",
+      "desc": "Add a new model connection for this vendor, then provide the connection name, API key, and model ID.",
+      "displayName": "Model Name",
+      "modelNamePlaceholder": "For example: {{name}} Primary",
       "apiKey": "API Key",
-      "apiKeyConfigured": "An API key is already stored for this provider.",
-      "apiKeyMissing": "No API key is stored for this provider yet.",
+      "apiKeyConfigured": "An API key is already stored for this connection.",
+      "apiKeyMissing": "No API key is stored for this connection yet.",
       "apiKeyStored": "Your API key is stored locally on your machine.",
       "replaceApiKey": "Replace API Key",
       "replaceApiKeyHelp": "Leave this field empty if you want to keep the currently stored API key.",
@@ -61,9 +79,8 @@
       "noFallbackOptions": "Add another provider first to use it as a fallback target.",
       "cancel": "Cancel",
       "change": "Change provider",
-      "add": "Add Provider",
+      "add": "Add Model",
       "save": "Save",
-      "customDoc": "Documentation",
       "validate": "Validate"
     },
     "card": {
@@ -84,14 +101,15 @@
       "anthropic": "Anthropic Compatible"
     },
     "toast": {
-      "added": "Provider added successfully",
-      "failedAdd": "Failed to add provider",
-      "deleted": "Provider deleted",
-      "failedDelete": "Failed to delete provider",
-      "defaultUpdated": "Default provider updated",
+      "added": "Model connection added successfully",
+      "failedAdd": "Failed to add model connection",
+      "deleted": "Model connection deleted",
+      "failedDelete": "Failed to delete model connection",
+      "defaultUpdated": "Default connection updated",
+      "defaultModelUpdated": "Default model updated",
       "failedDefault": "Failed to set default",
-      "updated": "Provider updated",
-      "failedUpdate": "Failed to update provider",
+      "updated": "Model connection updated",
+      "failedUpdate": "Failed to update model connection",
       "invalidKey": "Invalid API key",
       "modelRequired": "Model ID is required",
       "minimaxConflict": "Cannot add both MiniMax (Global) and MiniMax (CN) providers."

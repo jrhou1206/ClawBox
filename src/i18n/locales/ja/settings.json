@@ -22,6 +22,23 @@
       "multiAccountReady": "複数アカウント対応",
       "singletonVendor": "単一アカウントのプロバイダー"
     },
+    "layout": {
+      "vendors": "ベンダー一覧",
+      "vendorListDesc": "左側のベンダーを選ぶと、そのベンダー配下のモデル名とモデルを確認できます。",
+      "aliasesCount": "{{count}} 個のモデル名",
+      "modelsCount": "{{count}} 個のモデル",
+      "notConnected": "未接続",
+      "addModel": "モデルを追加",
+      "addConnection": "モデルを追加",
+      "connectNow": "モデルを追加",
+      "emptySelectionTitle": "左側からベンダーを選択して開始します",
+      "emptySelectionDesc": "ベンダーを選ぶと、右側にモデル名ごとの接続状況が表示されます。まだモデルがない場合は、そのまま接続ダイアログを開きます。",
+      "vendorSummary": "{{aliasCount}} 個のモデル名 · {{modelCount}} 個のモデル",
+      "vendorEmptyTitle": "{{vendor}} にはまだモデル名がありません",
+      "vendorEmptyDesc": "このベンダー向けにモデル接続を追加し、モデル名、API キー、ベース URL、モデル設定を入力してください。",
+      "editConnectionTitle": "接続を編集",
+      "editConnectionDesc": "{{name}} の接続設定、フォールバック経路、API キーを調整します。"
+    },
     "authModes": {
       "apiKey": "API キー",
       "oauthDevice": "OAuth デバイス",
@@ -41,12 +58,13 @@
       "cta": "最初のプロバイダーを追加"
     },
     "dialog": {
-      "title": "AI プロバイダーを追加",
-      "desc": "新しい AI モデルプロバイダーを構成",
-      "displayName": "表示名",
+      "title": "モデルを追加",
+      "desc": "このベンダーに新しいモデル接続を追加し、接続名、API キー、モデル ID を入力します。",
+      "displayName": "モデル名",
+      "modelNamePlaceholder": "例: {{name}} メイン",
       "apiKey": "API キー",
-      "apiKeyConfigured": "このプロバイダーには API キーが保存されています。",
-      "apiKeyMissing": "このプロバイダーにはまだ API キーが保存されていません。",
+      "apiKeyConfigured": "この接続には API キーが保存されています。",
+      "apiKeyMissing": "この接続にはまだ API キーが保存されていません。",
       "apiKeyStored": "API キーはローカルマシンに保存されます。",
       "replaceApiKey": "API キーを置き換える",
       "replaceApiKeyHelp": "現在保存されている API キーをそのまま使う場合は、この欄を空のままにしてください。",
@@ -61,9 +79,8 @@
       "noFallbackOptions": "フォールバック先にするには、先に別のプロバイダーを追加してください。",
       "cancel": "キャンセル",
       "change": "プロバイダーを変更",
-      "add": "プロバイダーを追加",
+      "add": "モデルを追加",
       "save": "保存",
-      "customDoc": "ドキュメント",
       "validate": "検証"
     },
     "card": {
@@ -84,14 +101,15 @@
       "anthropic": "Anthropic 互換"
     },
     "toast": {
-      "added": "プロバイダーが正常に追加されました",
-      "failedAdd": "プロバイダーの追加に失敗しました",
-      "deleted": "プロバイダーが削除されました",
-      "failedDelete": "プロバイダーの削除に失敗しました",
-      "defaultUpdated": "デフォルトプロバイダーが更新されました",
+      "added": "モデル接続を追加しました",
+      "failedAdd": "モデル接続の追加に失敗しました",
+      "deleted": "モデル接続を削除しました",
+      "failedDelete": "モデル接続の削除に失敗しました",
+      "defaultUpdated": "デフォルト接続が更新されました",
+      "defaultModelUpdated": "デフォルトモデルが更新されました",
       "failedDefault": "デフォルトの設定に失敗しました",
-      "updated": "プロバイダーが更新されました",
-      "failedUpdate": "プロバイダーの更新に失敗しました",
+      "updated": "モデル接続を更新しました",
+      "failedUpdate": "モデル接続の更新に失敗しました",
       "invalidKey": "無効な API キー",
       "modelRequired": "モデル ID が必要です",
       "minimaxConflict": "MiniMax (Global) と MiniMax (CN) は同時に追加できません。"

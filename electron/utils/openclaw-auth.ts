@@ -53,13 +53,26 @@ async function ensureDir(dir: string): Promise<void> {
 
 /** Read a JSON file, returning `null` on any error. */
 async function readJsonFile<T>(filePath: string): Promise<T | null> {
-  try {
-    if (!(await fileExists(filePath))) return null;
-    const raw = await readFile(filePath, 'utf-8');
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
+  // 重试机制：防止文件锁定时返回 null
+  const maxRetries = 3;
+  const retryDelays = [50, 100, 200];
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (!(await fileExists(filePath))) return null;
+      const raw = await readFile(filePath, 'utf-8');
+      return JSON.parse(raw) as T;
+    } catch (err) {
+      const isLastAttempt = attempt === maxRetries;
+      if (isLastAttempt) {
+        console.warn(`[readJsonFile] Failed to read ${filePath} after ${maxRetries} retries:`, err);
+        return null;
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
+      }
+    }
   }
+  return null;
 }
 
 /** Write a JSON file, creating parent directories if needed. */
@@ -135,7 +148,18 @@ const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] 
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
 
 async function readOpenClawJson(): Promise<Record<string, unknown>> {
-  return (await readJsonFile<Record<string, unknown>>(OPENCLAW_CONFIG_PATH)) ?? {};
+  if (!(await fileExists(OPENCLAW_CONFIG_PATH))) {
+    return {};
+  }
+
+  const config = await readJsonFile<Record<string, unknown>>(OPENCLAW_CONFIG_PATH);
+  if (config !== null) {
+    return config;
+  }
+
+  throw new Error(
+    `Failed to read existing openclaw.json at ${OPENCLAW_CONFIG_PATH}; refusing to treat it as empty because that can overwrite user config.`,
+  );
 }
 
 async function resolveInstalledFeishuPluginId(): Promise<string | null> {
@@ -174,6 +198,22 @@ function normalizeAgentsDefaultsCompactionMode(config: Record<string, unknown>):
 
 async function writeOpenClawJson(config: Record<string, unknown>): Promise<void> {
   normalizeAgentsDefaultsCompactionMode(config);
+
+  // 防御性检查：如果配置是空或近空对象，拒绝写入防止覆盖已有配置
+  const hasSubstantialConfig =
+    (config.agents && typeof config.agents === 'object' && Object.keys(config.agents).length > 0) ||
+    (config.models && typeof config.models === 'object' && Object.keys(config.models).length > 0) ||
+    (config.channels && typeof config.channels === 'object' && Object.keys(config.channels).length > 0) ||
+    (config.plugins && typeof config.plugins === 'object' && Object.keys(config.plugins).length > 0) ||
+    (config.tools && typeof config.tools === 'object' && Object.keys(config.tools).length > 0);
+
+  if (!hasSubstantialConfig) {
+    const onlyCommands = Object.keys(config).length === 1 && config.commands;
+    if (onlyCommands) {
+      console.error('[DEFENSIVE] Refusing to write near-empty openclaw.json (only has commands), might overwrite existing config:', config);
+      throw new Error('Refusing to write near-empty openclaw.json to prevent data loss');
+    }
+  }
 
   // Ensure SIGUSR1 graceful reload is authorized by OpenClaw config.
   const commands = (

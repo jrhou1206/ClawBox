@@ -19,12 +19,30 @@ const GOOGLE_OAUTH_RUNTIME_PROVIDER = 'google-gemini-cli';
 const GOOGLE_OAUTH_DEFAULT_MODEL_REF = `${GOOGLE_OAUTH_RUNTIME_PROVIDER}/gemini-3-pro-preview`;
 const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai-codex';
 const OPENAI_OAUTH_DEFAULT_MODEL_REF = `${OPENAI_OAUTH_RUNTIME_PROVIDER}/gpt-5.3-codex`;
+const CUSTOM_PROVIDER_HEADERS = Object.freeze({
+  'User-Agent': 'Mozilla/5.0',
+});
 
 type RuntimeProviderSyncContext = {
   runtimeProviderKey: string;
   meta: ReturnType<typeof getProviderConfig>;
   api: string;
 };
+
+function resolveRuntimeProviderHeaders(
+  config: ProviderConfig,
+  baseHeaders?: Record<string, string>,
+): Record<string, string> | undefined {
+  const headers = {
+    ...(baseHeaders ?? {}),
+  };
+
+  if (config.type === 'custom') {
+    headers['User-Agent'] = CUSTOM_PROVIDER_HEADERS['User-Agent'];
+  }
+
+  return Object.keys(headers).length > 0 ? headers : undefined;
+}
 
 function normalizeProviderBaseUrl(
   config: ProviderConfig,
@@ -294,7 +312,7 @@ async function syncRuntimeProviderConfig(
     baseUrl: normalizeProviderBaseUrl(config, config.baseUrl || context.meta?.baseUrl, context.api),
     api: context.api,
     apiKeyEnv: context.meta?.apiKeyEnv,
-    headers: context.meta?.headers,
+    headers: resolveRuntimeProviderHeaders(config, context.meta?.headers),
   });
 }
 
@@ -383,6 +401,7 @@ export async function syncUpdatedProviderToRuntime(
       await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
         baseUrl: normalizeProviderBaseUrl(config, config.baseUrl, config.apiProtocol || 'openai-completions'),
         api: config.apiProtocol || 'openai-completions',
+        headers: resolveRuntimeProviderHeaders(config),
       }, fallbackModels);
     }
   }
@@ -451,6 +470,7 @@ export async function syncDefaultProviderToRuntime(
       await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
         baseUrl: normalizeProviderBaseUrl(provider, provider.baseUrl, provider.apiProtocol || 'openai-completions'),
         api: provider.apiProtocol || 'openai-completions',
+        headers: resolveRuntimeProviderHeaders(provider),
       }, fallbackModels);
     } else if (shouldUseExplicitDefaultOverride(provider, ock)) {
       await setOpenClawDefaultModelWithOverride(ock, modelOverride, {

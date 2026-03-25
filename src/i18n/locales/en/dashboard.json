@@ -82,9 +82,15 @@
     "start": "Start",
     "stop": "Stop",
     "restart": "Restart",
+    "forceRestart": "Force Restart",
+    "stopTask": "Stop Task",
+    "resetConfig": "Reset Config",
     "diagnose": "Diagnose",
     "diagnosing": "Diagnosing...",
-    "done": "Diagnostics complete"
+    "done": "Diagnostics complete",
+    "forceStopping": "Force stopping...",
+    "stoppingTask": "Stopping task...",
+    "resetting": "Resetting..."
   },
   "logsSection": {
     "title": "Logs",

@@ -11,6 +11,17 @@
     "gatewayWarning": "ゲートウェイサービスが実行されていないため、チャンネルに接続できません。",
     "availableChannels": "利用可能なチャンネル",
     "supportedChannels": "サポートされているチャンネル",
+    "layout": {
+        "channels": "チャンネル一覧",
+        "channelsDesc": "左側のチャンネルを選ぶと、右側でアカウント、接続状態、Agent への紐付けを確認できます。",
+        "accountsCount": "{{count}} 件のアカウント",
+        "notConfigured": "未接続",
+        "detailSummary": "{{count}} 件のアカウント · {{status}}",
+        "detailEmptySummary": "このチャンネルはまだ設定されていません",
+        "emptyChannelTitle": "{{name}} はまだ接続されていません",
+        "emptySelectionTitle": "左側からチャンネルを選択して詳細を確認します",
+        "emptySelectionDesc": "チャンネルを選ぶと、右側にアカウント、接続状態、Agent への紐付けが表示されます。"
+    },
     "available": "利用可能なチャンネル",
     "availableDesc": "新しいチャンネルを接続",
     "configured": "設定済みチャンネル",
@@ -155,6 +166,16 @@
                 "設定 > リンクされたデバイス > デバイスをリンク に移動します",
                 "以下に表示されるQRコードをスキャンします",
                 "システムが自動的に電話番号を識別します"
+            ]
+        },
+        "wechat": {
+            "description": "openclaw-weixin プラグイン経由で QR コードをスキャンして WeChat にログインします。承認後、認証情報はローカルに自動保存されます。",
+            "docsUrl": "https://www.npmjs.com/package/@tencent-weixin/openclaw-weixin",
+            "instructions": [
+                "OpenClaw が利用可能で、openclaw-weixin プラグインがインストールされていることを確認します",
+                "下のボタンから QR コードを生成します",
+                "WeChat で QR コードを読み取り、認証を確認します",
+                "承認後、アカウント認証情報が自動保存され、ゲートウェイが再起動します"
             ]
         },
         "dingtalk": {

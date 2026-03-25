@@ -4,7 +4,7 @@
  */
 import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, type, arch, cpus, totalmem, freemem, hostname } from 'node:os';
 import { join, extname, basename } from 'node:path';
 import crypto from 'node:crypto';
 import { GatewayManager } from '../gateway/manager';
@@ -2106,6 +2106,21 @@ function registerAppHandlers(): void {
   // Get platform
   ipcMain.handle('app:platform', () => {
     return process.platform;
+  });
+
+  // Get system info for Dashboard
+  ipcMain.handle('app:systemInfo', () => {
+    const cpuList = cpus();
+    return {
+      osName: type(),
+      arch: arch(),
+      cpuModel: cpuList[0]?.model || 'Unknown',
+      cpuCores: cpuList.length,
+      totalMemory: totalmem(),
+      freeMemory: freemem(),
+      hostname: hostname(),
+      nodeVersion: process.versions.node,
+    };
   });
 
   // Quit app

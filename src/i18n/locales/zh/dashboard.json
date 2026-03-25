@@ -82,9 +82,15 @@
     "start": "启动",
     "stop": "停止",
     "restart": "重启",
+    "forceRestart": "强制重启",
+    "stopTask": "停止任务",
+    "resetConfig": "恢复配置",
     "diagnose": "诊断",
     "diagnosing": "诊断中...",
-    "done": "诊断完成"
+    "done": "诊断完成",
+    "forceStopping": "强制停止中...",
+    "stoppingTask": "停止任务中...",
+    "resetting": "恢复中..."
   },
   "logsSection": {
     "title": "日志",

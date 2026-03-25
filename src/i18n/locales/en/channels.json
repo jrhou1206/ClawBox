@@ -11,6 +11,17 @@
     "gatewayWarning": "Gateway service is not running. Channels cannot connect.",
     "availableChannels": "Available Channels",
     "supportedChannels": "Supported Channels",
+    "layout": {
+        "channels": "Channels",
+        "channelsDesc": "Choose a channel on the left to inspect accounts, connection status, and agent bindings.",
+        "accountsCount": "{{count}} accounts",
+        "notConfigured": "Not connected",
+        "detailSummary": "{{count}} accounts · {{status}}",
+        "detailEmptySummary": "This channel is not configured yet",
+        "emptyChannelTitle": "{{name}} is not connected yet",
+        "emptySelectionTitle": "Choose a channel on the left to inspect details",
+        "emptySelectionDesc": "After you select a channel, the right side shows accounts, connection status, and agent bindings."
+    },
     "available": "Available Channels",
     "availableDesc": "Connect a new channel",
     "configured": "Configured Channels",
@@ -155,6 +166,16 @@
                 "Go to Settings > Linked Devices > Link a Device",
                 "Scan the QR code shown below",
                 "The system will automatically identify your phone number"
+            ]
+        },
+        "wechat": {
+            "description": "Sign in to WeChat by scanning a QR code via the openclaw-weixin plugin. Credentials are saved locally after approval.",
+            "docsUrl": "https://www.npmjs.com/package/@tencent-weixin/openclaw-weixin",
+            "instructions": [
+                "Make sure OpenClaw is available and the openclaw-weixin plugin is installed",
+                "Click the button below to generate a QR code",
+                "Scan the QR code with WeChat and confirm authorization",
+                "After approval, the account credentials are saved automatically and the gateway restarts"
             ]
         },
         "dingtalk": {

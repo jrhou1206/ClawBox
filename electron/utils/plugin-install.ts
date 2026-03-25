@@ -7,7 +7,7 @@
  */
 import { app } from 'electron';
 import path from 'node:path';
-import { existsSync, cpSync, mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, cpSync, mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync, realpathSync, readlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { logger } from './logger';
@@ -27,6 +27,32 @@ function normalizeFsPathForWindows(filePath: string): string {
 
 function fsPath(filePath: string): string {
   return normalizeFsPathForWindows(filePath);
+}
+
+function resolveRealPath(filePath: string): string {
+  try {
+    return realpathSync(fsPath(filePath));
+  } catch {
+    // Some Windows junctions under pnpm fail when resolved via the \\?\-prefixed path.
+  }
+
+  try {
+    return realpathSync(filePath);
+  } catch {
+    // fall through
+  }
+
+  try {
+    return readlinkSync(filePath);
+  } catch {
+    // fall through
+  }
+
+  if (existsSync(fsPath(filePath)) || existsSync(filePath)) {
+    return filePath;
+  }
+
+  throw new Error(`Cannot resolve real path for ${filePath}`);
 }
 
 function asErrnoException(error: unknown): NodeJS.ErrnoException | null {
@@ -226,12 +252,7 @@ function listPackagesInDir(nodeModulesDir: string): Array<{ name: string; fullPa
  * logic).
  */
 export function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string, npmName: string): void {
-  let realPath: string;
-  try {
-    realPath = realpathSync(fsPath(npmPkgPath));
-  } catch {
-    throw new Error(`Cannot resolve real path for ${npmPkgPath}`);
-  }
+  const realPath = resolveRealPath(npmPkgPath);
 
   // 1. Copy plugin package itself
   rmSync(fsPath(targetDir), { recursive: true, force: true });
@@ -266,7 +287,7 @@ export function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string,
       if (SKIP_PACKAGES.has(name) || name.startsWith('@types/')) continue;
       let depRealPath: string;
       try {
-        depRealPath = realpathSync(fsPath(fullPath));
+        depRealPath = resolveRealPath(fullPath);
       } catch { continue; }
       if (collected.has(depRealPath)) continue;
       collected.set(depRealPath, name);

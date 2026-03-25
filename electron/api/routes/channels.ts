@@ -312,6 +312,15 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
   for (const rawChannelType of channelTypes) {
     const uiChannelType = toUiChannelType(rawChannelType);
     const channelAccountsFromConfig = configuredAccounts[rawChannelType]?.accountIds ?? [];
+    const runtimeAccounts = gatewayStatus?.channelAccounts?.[rawChannelType] ?? [];
+    const runtimeAccountIds = runtimeAccounts
+      .map((account) => account.accountId)
+      .filter((accountId): accountId is string => typeof accountId === 'string' && accountId.trim().length > 0)
+      .sort((left, right) => {
+        if (left === 'default') return -1;
+        if (right === 'default') return 1;
+        return left.localeCompare(right);
+      });
     const hasLocalConfig = configuredChannels.includes(rawChannelType) || Boolean(configuredAccounts[rawChannelType]);
     const channelSection = openClawConfig.channels?.[rawChannelType];
     const channelSummary =
@@ -324,19 +333,21 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
     const fallbackDefault =
       typeof channelSection?.defaultAccount === 'string' && channelSection.defaultAccount.trim()
         ? channelSection.defaultAccount
-        : (sortedConfigAccountIds[0] || 'default');
+        : (sortedConfigAccountIds[0] || runtimeAccountIds[0] || undefined);
     const defaultAccountId = configuredAccounts[rawChannelType]?.defaultAccountId
       ?? gatewayStatus?.channelDefaultAccountId?.[rawChannelType]
       ?? fallbackDefault;
-    const runtimeAccounts = gatewayStatus?.channelAccounts?.[rawChannelType] ?? [];
     const hasRuntimeConfigured = runtimeAccounts.some((account) => account.configured === true);
     if (!hasLocalConfig && !hasRuntimeConfigured) {
       continue;
     }
-    const runtimeAccountIds = runtimeAccounts
-      .map((account) => account.accountId)
-      .filter((accountId): accountId is string => typeof accountId === 'string' && accountId.trim().length > 0);
-    const accountIds = Array.from(new Set([...channelAccountsFromConfig, ...runtimeAccountIds, defaultAccountId]));
+    const accountIds = Array.from(new Set([
+      ...channelAccountsFromConfig,
+      ...runtimeAccountIds,
+      ...(defaultAccountId ? [defaultAccountId] : []),
+    ]));
+
+    if (accountIds.length === 0) continue;
 
     const accounts: ChannelAccountView[] = accountIds.map((accountId) => {
       const runtime = runtimeAccounts.find((item) => item.accountId === accountId);

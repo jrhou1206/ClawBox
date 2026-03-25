@@ -17,6 +17,12 @@
         "hideThinking": "隐藏思考过程",
         "currentAgent": "当前对话对象：{{agent}}"
     },
+    "status": {
+        "gatewayStartingTitle": "系统正在启动网关",
+        "gatewayStartingMessage": "包括重启在内的启动过程进行中，连接恢复后会自动继续同步对话状态。",
+        "gatewayReconnectingTitle": "系统正在重连网关",
+        "gatewayReconnectingMessage": "连接恢复后会自动继续同步对话状态，请稍候。"
+    },
     "composer": {
         "attachFiles": "添加文件",
         "pickAgent": "选择 Agent",

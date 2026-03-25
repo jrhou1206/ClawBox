@@ -1,7 +1,6 @@
 /**
  * Chat Toolbar
- * Session selector, new session, refresh, and thinking toggle.
- * Rendered in the Header when on the Chat page.
+ * Chat toolbar controls for current session context, refresh, and thinking toggle.
  */
 import { useMemo } from 'react';
 import { RefreshCw, Brain, Bot } from 'lucide-react';
@@ -12,7 +11,15 @@ import { useAgentsStore } from '@/stores/agents';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 
-export function ChatToolbar() {
+type ChatToolbarProps = {
+  showCurrentAgent?: boolean;
+  className?: string;
+};
+
+export function ChatToolbar({
+  showCurrentAgent = true,
+  className,
+}: ChatToolbarProps) {
   const refresh = useChatStore((s) => s.refresh);
   const loading = useChatStore((s) => s.loading);
   const showThinking = useChatStore((s) => s.showThinking);
@@ -26,12 +33,13 @@ export function ChatToolbar() {
   );
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-[12px] font-medium text-foreground/80 dark:border-white/10 dark:bg-white/5">
-        <Bot className="h-3.5 w-3.5 text-primary" />
-        <span>{t('toolbar.currentAgent', { agent: currentAgentName })}</span>
-      </div>
-      {/* Refresh */}
+    <div className={cn('flex items-center gap-2', className)}>
+      {showCurrentAgent && (
+        <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-[12px] font-medium text-foreground/80 dark:border-white/10 dark:bg-white/5">
+          <Bot className="h-3.5 w-3.5 text-primary" />
+          <span>{t('toolbar.currentAgent', { agent: currentAgentName })}</span>
+        </div>
+      )}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button

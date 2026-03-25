@@ -2,14 +2,13 @@
  * Home Page
  * New landing page after setup.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
   Copy,
   ExternalLink,
   Folder,
-  MessageSquare,
   MoreHorizontal,
   Pin,
   Plus,
@@ -20,6 +19,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Chat } from '@/pages/Chat';
+import { ChatToolbar } from '@/pages/Chat/ChatToolbar';
 import { TitleBar } from '@/components/layout/TitleBar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -35,9 +35,8 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
 import type { AgentSummary } from '@/types/agent';
 import type { CronJob, CronSchedule } from '@/types/cron';
-import { CHANNEL_NAMES, CHANNEL_ICONS } from '@/types/channel';
 
-type HomeTab = 'agent' | 'channel' | 'schedule';
+type HomeTab = 'agent' | 'schedule';
 type DockMode = 'none' | 'files' | 'roles';
 type Instance = {
   id: string;
@@ -62,7 +61,6 @@ type AgentRoleResponse = {
 
 const TAB_ITEMS: Array<{ id: HomeTab; label: string; icon: React.ReactNode }> = [
   { id: 'agent', label: 'Agent', icon: <Users className="h-3.5 w-3.5" /> },
-  { id: 'channel', label: '频道', icon: <MessageSquare className="h-3.5 w-3.5" /> },
   { id: 'schedule', label: '定时', icon: <Timer className="h-3.5 w-3.5" /> },
 ];
 
@@ -81,6 +79,37 @@ function getPlainText(content: unknown): string {
       .join('\n');
   }
   return '';
+}
+
+function formatPreviewText(content: unknown): string | null {
+  const text = getPlainText(content).trim();
+  if (!text) return null;
+  return text.length > 60 ? `${text.slice(0, 60)}…` : text;
+}
+
+function getLiveConversationPreview(
+  messages: Array<{ role?: string; content?: unknown }>,
+  streamingMessage: unknown,
+): string | null {
+  if (streamingMessage && typeof streamingMessage === 'object') {
+    const streamPreview = formatPreviewText((streamingMessage as { content?: unknown }).content);
+    if (streamPreview) {
+      return streamPreview;
+    }
+  }
+
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.role !== 'assistant' && message.role !== 'user') {
+      continue;
+    }
+    const preview = formatPreviewText(message.content);
+    if (preview) {
+      return preview;
+    }
+  }
+
+  return null;
 }
 
 function formatDateTime(ms: number): string {
@@ -242,12 +271,12 @@ export function Home() {
   const pinnedAgentIds = useSettingsStore((s) => s.pinnedAgentIds);
   const togglePinnedAgent = useSettingsStore((s) => s.togglePinnedAgent);
 
-  const channelOwners = useAgentsStore((s) => s.channelOwners);
-
-  const sessions = useChatStore((s) => s.sessions);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
-  const sessionLabels = useChatStore((s) => s.sessionLabels);
+  const messages = useChatStore((s) => s.messages);
   const sessionLastActivity = useChatStore((s) => s.sessionLastActivity);
+  const sending = useChatStore((s) => s.sending);
+  const pendingFinal = useChatStore((s) => s.pendingFinal);
+  const streamingMessage = useChatStore((s) => s.streamingMessage);
   const switchSession = useChatStore((s) => s.switchSession);
   const loadSessions = useChatStore((s) => s.loadSessions);
 
@@ -280,6 +309,7 @@ export function Home() {
 
   /** Last message preview per agent id */
   const [agentPreviews, setAgentPreviews] = useState<Record<string, string>>({});
+  const previousRunActiveRef = useRef(false);
 
   const currentAgentId = useMemo(() => getAgentIdFromSessionKey(currentSessionKey), [currentSessionKey]);
   const currentAgent = useMemo(
@@ -300,32 +330,6 @@ export function Home() {
       return a.name.localeCompare(b.name);
     });
   }, [agents, pinnedAgentIds]);
-
-  const sortedSessions = useMemo(() => {
-    return [...sessions].sort((a, b) => (sessionLastActivity[b.key] ?? 0) - (sessionLastActivity[a.key] ?? 0));
-  }, [sessions, sessionLastActivity]);
-
-  // Build a set of agent IDs that own at least one channel, and a reverse map (agentId → channel types)
-  const agentChannelMap = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const [channelType, agentId] of Object.entries(channelOwners)) {
-      if (!agentId) continue;
-      const existing = map.get(agentId) ?? [];
-      existing.push(channelType);
-      map.set(agentId, existing);
-    }
-    return map;
-  }, [channelOwners]);
-
-  const channelSessions = useMemo(() => {
-    return sortedSessions.filter((s) => {
-      const agentId = getAgentIdFromSessionKey(s.key);
-      return agentChannelMap.has(agentId);
-    });
-  }, [sortedSessions, agentChannelMap]);
-
-  const getSessionTitle = (key: string, displayName?: string, label?: string) =>
-    sessionLabels[key] ?? label ?? displayName ?? key;
 
   useEffect(() => {
     void fetchAgents();
@@ -353,9 +357,8 @@ export function Home() {
           for (let i = msgs.length - 1; i >= 0; i--) {
             const m = msgs[i] as { role?: string; content?: unknown };
             if (m.role === 'assistant' || m.role === 'user') {
-              const text = getPlainText(m.content).trim();
-              if (text) {
-                const truncated = text.length > 60 ? `${text.slice(0, 60)}…` : text;
+              const truncated = formatPreviewText(m.content);
+              if (truncated) {
                 setAgentPreviews((prev) => ({ ...prev, [agent.id]: truncated }));
                 return;
               }
@@ -369,6 +372,41 @@ export function Home() {
   useEffect(() => {
     void fetchAgentPreviews();
   }, [fetchAgentPreviews, agents]);
+
+  useEffect(() => {
+    const nextPreview = getLiveConversationPreview(messages, streamingMessage);
+    if (!nextPreview) {
+      return;
+    }
+
+    setAgentPreviews((prev) => {
+      if (prev[currentAgentId] === nextPreview) {
+        return prev;
+      }
+      return { ...prev, [currentAgentId]: nextPreview };
+    });
+  }, [currentAgentId, messages, streamingMessage]);
+
+  const refreshLeftRailData = useCallback(async () => {
+    if (!isGatewayRunning) {
+      return;
+    }
+
+    await Promise.all([
+      fetchAgents(),
+      fetchCronJobs(),
+      loadSessions(),
+    ]);
+    await fetchAgentPreviews();
+  }, [fetchAgentPreviews, fetchAgents, fetchCronJobs, isGatewayRunning, loadSessions]);
+
+  useEffect(() => {
+    const runActive = sending || pendingFinal;
+    if (previousRunActiveRef.current && !runActive) {
+      void refreshLeftRailData();
+    }
+    previousRunActiveRef.current = runActive;
+  }, [pendingFinal, refreshLeftRailData, sending]);
 
   // Close agent menu on outside click
   useEffect(() => {
@@ -534,9 +572,6 @@ export function Home() {
                       void fetchAgents();
                       void loadSessions();
                       void fetchAgentPreviews();
-                    } else if (item.id === 'channel') {
-                      void fetchAgents();
-                      void loadSessions();
                     } else if (item.id === 'schedule') {
                       void fetchCronJobs();
                     }
@@ -705,59 +740,6 @@ export function Home() {
               </div>
             )}
 
-            {tab === 'channel' && (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between px-1 mb-1">
-                  <div className="text-[11px] font-semibold text-muted-foreground/60 uppercase tracking-wider">频道会话</div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-black/[0.05] dark:hover:bg-white/[0.05]"
-                    onClick={() => navigate('/settings/channels')}
-                    title="去频道设置"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-                {channelSessions.length === 0 ? (
-                  <div className="px-3 py-4 text-[12px] text-muted-foreground/60 text-center">
-                    {!isGatewayRunning
-                      ? 'Gateway 未连接'
-                      : Object.keys(channelOwners).length === 0
-                        ? '暂无频道绑定，请先在频道设置中配置'
-                        : '暂无频道会话'}
-                  </div>
-                ) : (
-                  channelSessions.map((s) => {
-                    const agentId = getAgentIdFromSessionKey(s.key);
-                    const title = getSessionTitle(s.key, s.displayName, s.label);
-                    const lastAt = sessionLastActivity[s.key];
-                    const boundChannels = agentChannelMap.get(agentId) ?? [];
-                    const channelLabel = boundChannels
-                      .map((ch) => `${CHANNEL_ICONS[ch as keyof typeof CHANNEL_ICONS] ?? ''} ${CHANNEL_NAMES[ch as keyof typeof CHANNEL_NAMES] ?? ch}`)
-                      .join(', ');
-                    const right = (
-                      <div className="mt-0.5 shrink-0 text-[11px] text-muted-foreground">
-                        {typeof lastAt === 'number' && Number.isFinite(lastAt)
-                          ? new Date(lastAt).toLocaleString()
-                          : '—'}
-                      </div>
-                    );
-                    return (
-                      <ListItem
-                        key={s.key}
-                        title={title}
-                        subtitle={`${channelLabel} · ${agentId}`}
-                        active={s.key === currentSessionKey}
-                        onClick={() => switchSession(s.key)}
-                        right={right}
-                      />
-                    );
-                  })
-                )}
-              </div>
-            )}
-
             {tab === 'schedule' && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between px-1 mb-1">
@@ -914,6 +896,7 @@ export function Home() {
                   {currentAgent?.name ?? '未选择 Agent'}
                 </div>
               </div>
+              <ChatToolbar showCurrentAgent={false} className="shrink-0" />
             </div>
 
             <div className="flex items-center gap-1">
@@ -948,7 +931,7 @@ export function Home() {
           <div className="flex-1 min-w-0 flex overflow-hidden">
             {/* Chat */}
             <div className="flex-1 min-w-0 overflow-hidden">
-              <Chat embedded className="h-full" />
+              <Chat embedded hideToolbar className="h-full" />
             </div>
 
             {/* Dock */}

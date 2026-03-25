@@ -44,6 +44,7 @@ const electronAPI = {
         'app:quit',
         'app:relaunch',
         'app:request',
+        'app:systemInfo',
         // Window controls
         'window:minimize',
         'window:maximize',

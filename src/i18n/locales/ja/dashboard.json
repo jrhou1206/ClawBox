@@ -82,9 +82,15 @@
     "start": "起動",
     "stop": "停止",
     "restart": "再起動",
+    "forceRestart": "強制再起動",
+    "stopTask": "タスク停止",
+    "resetConfig": "設定リセット",
     "diagnose": "診断",
     "diagnosing": "診断中...",
-    "done": "診断が完了しました"
+    "done": "診断が完了しました",
+    "forceStopping": "強制停止中...",
+    "stoppingTask": "タスク停止中...",
+    "resetting": "リセット中..."
   },
   "logsSection": {
     "title": "ログ",

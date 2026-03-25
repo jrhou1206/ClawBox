@@ -10,10 +10,8 @@ const { testHome, testUserData } = vi.hoisted(() => {
   };
 });
 
-vi.mock('os', async () => {
-  const actual = await vi.importActual<typeof import('os')>('os');
+vi.mock('os', () => {
   const mocked = {
-    ...actual,
     homedir: () => testHome,
   };
   return {
@@ -34,6 +32,10 @@ async function writeOpenClawJson(config: unknown): Promise<void> {
   const openclawDir = join(testHome, '.openclaw');
   await mkdir(openclawDir, { recursive: true });
   await writeFile(join(openclawDir, 'openclaw.json'), JSON.stringify(config, null, 2), 'utf8');
+}
+
+async function readOpenClawJsonRaw(): Promise<string> {
+  return readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8');
 }
 
 async function readAuthProfiles(agentId: string): Promise<Record<string, unknown>> {
@@ -109,5 +111,53 @@ describe('saveProviderKeyToOpenClaw', () => {
     );
 
     logSpy.mockRestore();
+  });
+});
+
+describe('syncGatewayTokenToConfig', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('bootstraps openclaw.json when the file does not exist yet', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { syncGatewayTokenToConfig } = await import('@electron/utils/openclaw-auth');
+
+    await syncGatewayTokenToConfig('token-123');
+
+    const raw = await readOpenClawJsonRaw();
+    const config = JSON.parse(raw) as Record<string, unknown>;
+    const gateway = config.gateway as Record<string, unknown>;
+    const auth = gateway.auth as Record<string, unknown>;
+    const controlUi = gateway.controlUi as Record<string, unknown>;
+
+    expect(auth).toEqual({
+      mode: 'token',
+      token: 'token-123',
+    });
+    expect(controlUi.allowedOrigins).toEqual(['file://']);
+    expect(config.commands).toEqual({ restart: true });
+
+    logSpy.mockRestore();
+  });
+
+  it('refuses to overwrite an unreadable existing openclaw.json', async () => {
+    const openclawDir = join(testHome, '.openclaw');
+    const invalidRaw = '{\n  "agents": ';
+    await mkdir(openclawDir, { recursive: true });
+    await writeFile(join(openclawDir, 'openclaw.json'), invalidRaw, 'utf8');
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { syncGatewayTokenToConfig } = await import('@electron/utils/openclaw-auth');
+
+    await expect(syncGatewayTokenToConfig('token-123')).rejects.toThrow(
+      /refusing to treat it as empty because that can overwrite user config/i,
+    );
+    expect(await readOpenClawJsonRaw()).toBe(invalidRaw);
+
+    warnSpy.mockRestore();
   });
 });

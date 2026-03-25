@@ -222,6 +222,10 @@ async function ensureConfigDir(): Promise<void> {
     }
 }
 
+async function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function readOpenClawConfig(): Promise<OpenClawConfig> {
     await ensureConfigDir();
 
@@ -229,18 +233,51 @@ export async function readOpenClawConfig(): Promise<OpenClawConfig> {
         return {};
     }
 
-    try {
-        const content = await readFile(CONFIG_FILE, 'utf-8');
-        return JSON.parse(content) as OpenClawConfig;
-    } catch (error) {
-        logger.error('Failed to read OpenClaw config', error);
-        console.error('Failed to read OpenClaw config:', error);
-        return {};
+    // 重试机制：防止文件被锁定时返回空对象覆盖配置
+    const maxRetries = 3;
+    const retryDelays = [50, 100, 200];
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            const content = await readFile(CONFIG_FILE, 'utf-8');
+            const config = JSON.parse(content) as OpenClawConfig;
+            return config;
+        } catch (error) {
+            const isLastAttempt = attempt === maxRetries;
+            if (isLastAttempt) {
+                logger.error('Failed to read OpenClaw config after retries', error);
+                console.error('Failed to read OpenClaw config after retries:', error);
+                throw new Error(`Failed to read OpenClaw config after ${maxRetries} retries: ${error}`);
+            } else {
+                logger.warn(`Read OpenClaw config attempt ${attempt + 1} failed, retrying...`, error);
+                await sleep(retryDelays[attempt]);
+            }
+        }
     }
+
+    // 永远不会到这里
+    return {};
 }
 
 export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void> {
     await ensureConfigDir();
+
+    // 防御性检查：如果配置是空或近空对象，拒绝写入防止覆盖已有配置
+    const hasSubstantialConfig =
+        (config.agents && Object.keys(config.agents).length > 0) ||
+        (config.models && Object.keys(config.models).length > 0) ||
+        (config.channels && Object.keys(config.channels).length > 0) ||
+        (config.plugins && Object.keys(config.plugins).length > 0) ||
+        (config.tools && Object.keys(config.tools).length > 0);
+
+    if (!hasSubstantialConfig) {
+        const onlyCommands = Object.keys(config).length === 1 && config.commands;
+        if (onlyCommands) {
+            logger.warn('Refusing to write near-empty OpenClaw config (only has commands), might overwrite existing config');
+            console.warn('[DEFENSIVE] Refusing to write near-empty OpenClaw config, might overwrite existing config:', config);
+            throw new Error('Refusing to write near-empty OpenClaw config to prevent data loss');
+        }
+    }
 
     try {
         // Enable graceful in-process reload authorization for SIGUSR1 flows.
@@ -756,6 +793,66 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
     return withConfigLock(async () => {
         const resolvedChannelType = resolveStoredChannelType(channelType);
         const currentConfig = await readOpenClawConfig();
+        if (resolvedChannelType === 'whatsapp') {
+            const whatsappDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp');
+            const targetDir = join(whatsappDir, accountId);
+            let removedAccountState = false;
+
+            if (await fileExists(targetDir)) {
+                await rm(targetDir, { recursive: true, force: true });
+                removedAccountState = true;
+            }
+
+            let hasRemainingSessions = false;
+            if (await fileExists(whatsappDir)) {
+                const entries = await readdir(whatsappDir);
+                for (const entry of entries) {
+                    try {
+                        const s = await stat(join(whatsappDir, entry));
+                        if (s.isDirectory()) {
+                            hasRemainingSessions = true;
+                            break;
+                        }
+                    } catch {
+                        // ignore
+                    }
+                }
+
+                if (!hasRemainingSessions) {
+                    await rm(whatsappDir, { recursive: true, force: true });
+                }
+            }
+
+            // Clean up channels.whatsapp account data
+            const whatsappChannel = currentConfig.channels?.[resolvedChannelType];
+            if (whatsappChannel) {
+                const accounts = whatsappChannel.accounts as Record<string, ChannelConfigData> | undefined;
+                if (accounts?.[accountId]) {
+                    delete accounts[accountId];
+                }
+                if (!accounts || Object.keys(accounts).length === 0) {
+                    // No remaining accounts — remove entire channel section
+                    delete currentConfig.channels![resolvedChannelType];
+                    if (currentConfig.channels && Object.keys(currentConfig.channels).length === 0) {
+                        delete currentConfig.channels;
+                    }
+                }
+            }
+
+            if (!hasRemainingSessions) {
+                removePluginRegistration(currentConfig, resolvedChannelType);
+            }
+
+            // Always write back — we may have cleaned channels and/or plugins
+            await writeOpenClawConfig(currentConfig);
+
+            if (removedAccountState || !hasRemainingSessions) {
+                logger.info('Deleted WhatsApp account config', { accountId });
+                console.log(`Deleted WhatsApp account config for ${accountId}`);
+            }
+            return;
+        }
+
         const channelSection = currentConfig.channels?.[resolvedChannelType];
         if (!channelSection) {
             if (isWechatChannelType(resolvedChannelType)) {
@@ -874,7 +971,7 @@ export async function listConfiguredChannels(): Promise<string[]> {
         for (const channelType of Object.keys(config.channels)) {
             const section = config.channels[channelType];
             if (section.enabled === false) continue;
-            if (channelHasAnyAccount(section) || Object.keys(section).length > 0) {
+            if (channelHasAnyAccount(section)) {
                 channels.push(channelType);
             }
         }
@@ -937,11 +1034,19 @@ export async function listConfiguredChannelAccounts(): Promise<Record<string, Co
         }
 
         if (accountIds.length === 0) {
-            const hasAnyPayload = Object.keys(section).some((key) => !CHANNEL_TOP_LEVEL_KEYS_TO_KEEP.has(key));
-            if (!hasAnyPayload) continue;
+            // Legacy format: top-level keys outside accounts/defaultAccount/enabled
+            // Only report if there are actual credential keys (not just metadata)
+            const legacyPayload = getLegacyChannelPayload(section);
+            if (Object.keys(legacyPayload).length === 0) continue;
+            // Migrate legacy config into accounts structure so it won't keep ghosting
+            migrateLegacyChannelConfigToAccounts(section, DEFAULT_ACCOUNT_ID);
+            const migratedIds = section.accounts && typeof section.accounts === 'object'
+                ? Object.keys(section.accounts).filter(Boolean)
+                : [];
+            if (migratedIds.length === 0) continue;
             result[channelType] = {
                 defaultAccountId,
-                accountIds: [DEFAULT_ACCOUNT_ID],
+                accountIds: migratedIds,
             };
             continue;
         }

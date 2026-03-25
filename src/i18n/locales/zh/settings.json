@@ -22,6 +22,23 @@
       "multiAccountReady": "支持多账户",
       "singletonVendor": "单例提供商"
     },
+    "layout": {
+      "vendors": "供应商列表",
+      "vendorListDesc": "点击左侧供应商，查看该供应商下的模型名称和模型。",
+      "aliasesCount": "{{count}} 个模型名称",
+      "modelsCount": "{{count}} 个模型",
+      "notConnected": "未接入",
+      "addModel": "添加模型",
+      "addConnection": "添加模型",
+      "connectNow": "添加模型",
+      "emptySelectionTitle": "从左侧选择一个供应商开始接入",
+      "emptySelectionDesc": "选择供应商后，可以按模型名称查看当前接入的模型；如果该供应商还没接入，系统会直接弹出接入窗口。",
+      "vendorSummary": "{{aliasCount}} 个模型名称 · {{modelCount}} 个模型",
+      "vendorEmptyTitle": "{{vendor}} 还没有模型名称",
+      "vendorEmptyDesc": "为当前供应商添加模型接入，并填写模型名称、API Key、基础 URL 和模型配置。",
+      "editConnectionTitle": "编辑接入",
+      "editConnectionDesc": "调整 {{name}} 的连接配置、回退线路和 API Key。"
+    },
     "authModes": {
       "apiKey": "API 密钥",
       "oauthDevice": "OAuth 设备登录",
@@ -41,12 +58,13 @@
       "cta": "添加您的第一个提供商"
     },
     "dialog": {
-      "title": "添加 AI 提供商",
-      "desc": "配置新的 AI 模型提供商",
-      "displayName": "显示名称",
+      "title": "添加模型",
+      "desc": "为当前供应商添加新的模型接入，并填写接入名称、API Key 和模型 ID。",
+      "displayName": "模型名称",
+      "modelNamePlaceholder": "例如：{{name}} 主账号",
       "apiKey": "API 密钥",
-      "apiKeyConfigured": "这个 provider 已经保存了 API key。",
-      "apiKeyMissing": "这个 provider 还没有保存 API key。",
+      "apiKeyConfigured": "当前接入已保存 API Key。",
+      "apiKeyMissing": "当前接入还没有保存 API Key。",
       "apiKeyStored": "您的 API 密钥存储在本地机器上。",
       "replaceApiKey": "替换 API Key",
       "replaceApiKeyHelp": "如果想保留当前已保存的 API key，这里留空即可。",
@@ -61,9 +79,8 @@
       "noFallbackOptions": "请先添加其他 provider，才能把它设为回退目标。",
       "cancel": "取消",
       "change": "更换提供商",
-      "add": "添加提供商",
+      "add": "添加模型",
       "save": "保存",
-      "customDoc": "查看文档",
       "validate": "验证"
     },
     "card": {
@@ -84,14 +101,15 @@
       "anthropic": "Anthropic 兼容"
     },
     "toast": {
-      "added": "提供商添加成功",
-      "failedAdd": "添加提供商失败",
-      "deleted": "提供商已删除",
-      "failedDelete": "删除提供商失败",
-      "defaultUpdated": "默认提供商已更新",
+      "added": "模型接入添加成功",
+      "failedAdd": "添加模型接入失败",
+      "deleted": "模型接入已删除",
+      "failedDelete": "删除模型接入失败",
+      "defaultUpdated": "默认接入已更新",
+      "defaultModelUpdated": "默认模型已更新",
       "failedDefault": "设置默认失败",
-      "updated": "提供商已更新",
-      "failedUpdate": "更新提供商失败",
+      "updated": "模型接入已更新",
+      "failedUpdate": "更新模型接入失败",
       "invalidKey": "无效的 API 密钥",
       "modelRequired": "需要模型 ID",
       "minimaxConflict": "不能同时添加 MiniMax 国际站和国内站的服务商。"

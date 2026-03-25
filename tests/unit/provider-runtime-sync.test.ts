@@ -142,4 +142,63 @@ describe('provider-runtime-sync refresh strategy', () => {
     expect(gateway.debouncedReload).not.toHaveBeenCalled();
     expect(gateway.debouncedRestart).not.toHaveBeenCalled();
   });
+
+  it('injects a browser-like User-Agent header for custom providers on save', async () => {
+    const gateway = createGateway('running');
+    const customProvider = createProvider({
+      id: 'custom-provider',
+      name: 'Custom Provider',
+      type: 'custom',
+      baseUrl: 'https://custom.example.com/v1',
+      model: 'custom-model',
+      apiProtocol: 'openai-completions',
+    });
+
+    mocks.getProviderConfig.mockReturnValue(undefined);
+
+    await syncSavedProviderToRuntime(customProvider, undefined, gateway as GatewayManager);
+
+    expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
+      'custom-custompr',
+      'custom-model',
+      expect.objectContaining({
+        baseUrl: 'https://custom.example.com/v1',
+        api: 'openai-completions',
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+        },
+      }),
+    );
+  });
+
+  it('injects a browser-like User-Agent header when a custom provider becomes default', async () => {
+    const gateway = createGateway('running');
+    const customProvider = createProvider({
+      id: 'custom-provider',
+      name: 'Custom Provider',
+      type: 'custom',
+      baseUrl: 'https://custom.example.com/v1',
+      model: 'custom-model',
+      apiProtocol: 'openai-completions',
+    });
+
+    mocks.getProvider.mockResolvedValue(customProvider);
+    mocks.getProviderConfig.mockReturnValue(undefined);
+    mocks.getDefaultProvider.mockResolvedValue('custom-provider');
+
+    await syncDefaultProviderToRuntime('custom-provider', gateway as GatewayManager);
+
+    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith(
+      'custom-custompr',
+      'custom-custompr/custom-model',
+      expect.objectContaining({
+        baseUrl: 'https://custom.example.com/v1',
+        api: 'openai-completions',
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+        },
+      }),
+      [],
+    );
+  });
 });

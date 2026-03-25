@@ -61,6 +61,12 @@ const labelClasses = 'text-[14px] text-foreground/80 font-bold';
 const outlineButtonClasses = 'h-9 text-[13px] font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground';
 const primaryButtonClasses = 'h-9 text-[13px] font-medium rounded-full px-4 shadow-none';
 
+function normalizeQrImageSrc(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  return trimmed.startsWith('data:image/') ? trimmed : `data:image/png;base64,${trimmed}`;
+}
+
 export function ChannelConfigModal({
   initialSelectedType = null,
   configuredTypes = [],
@@ -196,29 +202,35 @@ export function ChannelConfigModal({
   }, [addChannel, channelName, channels, configValues, fetchChannels, meta?.configFields, onChannelSaved, showChannelName]);
 
   useEffect(() => {
-    if (selectedType !== 'whatsapp') return;
+    if (selectedType !== 'whatsapp' && selectedType !== 'wechat') return;
+
+    const eventPrefix = selectedType === 'wechat' ? 'channel:wechat' : 'channel:whatsapp';
+    const cancelPath = selectedType === 'wechat' ? '/api/channels/wechat/cancel' : '/api/channels/whatsapp/cancel';
+    const isWeChat = selectedType === 'wechat';
 
     const onQr = (...args: unknown[]) => {
       const data = args[0] as { qr: string; raw: string };
       void data.raw;
-      setQrCode(`data:image/png;base64,${data.qr}`);
+      setQrCode(normalizeQrImageSrc(data.qr));
     };
 
     const onSuccess = async (...args: unknown[]) => {
       const data = args[0] as { accountId?: string } | undefined;
       void data?.accountId;
-      toast.success(t('toast.whatsappConnected'));
+      toast.success(isWeChat ? t('toast.channelSaved', { name: CHANNEL_NAMES.wechat }) : t('toast.whatsappConnected'));
       try {
-        const saveResult = await hostApiFetch<{ success?: boolean; error?: string }>('/api/channels/config', {
-          method: 'POST',
-          body: JSON.stringify({ channelType: 'whatsapp', config: { enabled: true }, accountId: resolvedAccountId }),
-        });
-        if (!saveResult?.success) {
-          throw new Error(saveResult?.error || 'Failed to save WhatsApp config');
+        if (!isWeChat) {
+          const saveResult = await hostApiFetch<{ success?: boolean; error?: string }>('/api/channels/config', {
+            method: 'POST',
+            body: JSON.stringify({ channelType: 'whatsapp', config: { enabled: true }, accountId: resolvedAccountId }),
+          });
+          if (!saveResult?.success) {
+            throw new Error(saveResult?.error || 'Failed to save WhatsApp config');
+          }
         }
 
         try {
-          await finishSave('whatsapp');
+          await finishSave(selectedType);
         } catch (postSaveError) {
           toast.warning(t('toast.savedButRefreshFailed'));
           console.warn('Channel saved but post-save refresh failed:', postSaveError);
@@ -236,20 +248,24 @@ export function ChannelConfigModal({
 
     const onError = (...args: unknown[]) => {
       const err = args[0] as string;
-      toast.error(t('toast.whatsappFailed', { error: err }));
+      toast.error(
+        isWeChat
+          ? t('toast.configFailed', { error: err })
+          : t('toast.whatsappFailed', { error: err }),
+      );
       setQrCode(null);
       setConnecting(false);
     };
 
-    const removeQrListener = subscribeHostEvent('channel:whatsapp-qr', onQr);
-    const removeSuccessListener = subscribeHostEvent('channel:whatsapp-success', onSuccess);
-    const removeErrorListener = subscribeHostEvent('channel:whatsapp-error', onError);
+    const removeQrListener = subscribeHostEvent(`${eventPrefix}-qr`, onQr);
+    const removeSuccessListener = subscribeHostEvent(`${eventPrefix}-success`, onSuccess);
+    const removeErrorListener = subscribeHostEvent(`${eventPrefix}-error`, onError);
 
     return () => {
       removeQrListener();
       removeSuccessListener();
       removeErrorListener();
-      hostApiFetch('/api/channels/whatsapp/cancel', { method: 'POST' }).catch(() => { });
+      hostApiFetch(cancelPath, { method: 'POST' }).catch(() => { });
     };
   }, [finishSave, onClose, resolvedAccountId, selectedType, t]);
 
@@ -318,7 +334,8 @@ export function ChannelConfigModal({
       }
 
       if (meta.connectionType === 'qr') {
-        await hostApiFetch('/api/channels/whatsapp/start', {
+        const startPath = selectedType === 'wechat' ? '/api/channels/wechat/start' : '/api/channels/whatsapp/start';
+        await hostApiFetch(startPath, {
           method: 'POST',
           body: JSON.stringify({ accountId: resolvedAccountId || 'default' }),
         });

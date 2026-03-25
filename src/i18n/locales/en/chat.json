@@ -17,6 +17,12 @@
         "hideThinking": "Hide thinking",
         "currentAgent": "Talking to {{agent}}"
     },
+    "status": {
+        "gatewayStartingTitle": "Gateway is starting",
+        "gatewayStartingMessage": "Startup or restart is in progress. Chat state will resume automatically once the gateway is ready.",
+        "gatewayReconnectingTitle": "Gateway is reconnecting",
+        "gatewayReconnectingMessage": "Chat state will resume automatically once the connection is restored."
+    },
     "composer": {
         "attachFiles": "Attach files",
         "pickAgent": "Choose agent",

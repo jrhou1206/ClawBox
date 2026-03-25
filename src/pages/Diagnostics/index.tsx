@@ -291,8 +291,8 @@ export function Diagnostics() {
           {/* Environment Checks + Controls */}
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
             {/* Env Checks */}
-            <Card className="rounded-xl border shadow-sm">
-              <div className="p-4">
+            <Card className="rounded-xl border-0 shadow-none bg-black/[0.02] dark:bg-white/[0.02]">
+              <div className="p-5">
                 <h3 className="text-sm font-semibold mb-3">{t('dashboard:env.title')}</h3>
                 {openclawStatus?.dir && (
                   <p className="text-[11px] text-muted-foreground mb-3">OpenClaw: {openclawStatus.dir}</p>
@@ -312,8 +312,8 @@ export function Diagnostics() {
             </Card>
 
             {/* Controls */}
-            <Card className="rounded-xl border shadow-sm">
-              <div className="p-4">
+            <Card className="rounded-xl border-0 shadow-none bg-black/[0.02] dark:bg-white/[0.02]">
+              <div className="p-5">
                 <h3 className="text-sm font-semibold mb-3">{t('dashboard:ops.title')}</h3>
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   <Button variant="outline" size="sm" disabled={isBusy || gatewayStatus.state === 'running'} onClick={() => void startGateway()} className="h-8 text-xs rounded-lg">
@@ -335,8 +335,8 @@ export function Diagnostics() {
           </div>
 
           {/* Logs */}
-          <Card className="rounded-xl border shadow-sm">
-            <div className="p-4">
+          <Card className="rounded-xl border-0 shadow-none bg-black/[0.02] dark:bg-white/[0.02]">
+            <div className="p-5">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-3">
                   <h3 className="text-sm font-semibold">{t('dashboard:logsSection.title')}</h3>
@@ -377,16 +377,16 @@ export function Diagnostics() {
           </Card>
 
           {/* System Info - Collapsible */}
-          <Card className="rounded-xl border shadow-sm">
+          <Card className="rounded-xl border-0 shadow-none bg-black/[0.02] dark:bg-white/[0.02]">
             <button
               onClick={() => setShowSystemInfo(!showSystemInfo)}
-              className="w-full p-3 flex items-center justify-between text-left hover:bg-muted/30 transition-colors rounded-xl"
+              className="w-full p-4 flex items-center justify-between text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors rounded-xl"
             >
               <h3 className="text-sm font-semibold">{t('dashboard:system.title')}</h3>
               {showSystemInfo ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
             </button>
             {showSystemInfo && (
-              <div className="px-3 pb-3 pt-0">
+              <div className="px-4 pb-4 pt-0">
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
                   <MetricItem label={t('dashboard:system.appVersion')} value={appVersion || '--'} />
                   <MetricItem label={t('dashboard:system.platform')} value={platform || '--'} />

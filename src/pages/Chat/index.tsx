@@ -1,10 +1,9 @@
 /**
  * Chat Page
  * Native React implementation communicating with OpenClaw Gateway
- * via gateway:rpc IPC. Session selector, thinking toggle, and refresh
- * are in the toolbar; messages render with markdown + streaming.
+ * via gateway:rpc IPC. Messages render with markdown + streaming.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -111,9 +110,25 @@ export function Chat({
   const hasStreamTools = streamTools.length > 0;
   const streamImages = streamMsg ? extractImages(streamMsg) : [];
   const hasStreamImages = streamImages.length > 0;
-  const hasStreamToolStatus = streamingTools.length > 0;
-  const shouldRenderStreaming = sending && (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
-  const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
+  const hasVisibleStreamTools = showThinking && hasStreamTools;
+  const hasStreamToolStatus = showThinking && streamingTools.length > 0;
+  const shouldRenderStreaming = sending && (hasStreamText || hasStreamThinking || hasVisibleStreamTools || hasStreamImages || hasStreamToolStatus);
+  const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasVisibleStreamTools || hasStreamImages || hasStreamToolStatus;
+  const gatewayStatusNotice = useMemo(() => {
+    if (gatewayStatus.state === 'starting') {
+      return {
+        title: t('status.gatewayStartingTitle'),
+        message: t('status.gatewayStartingMessage'),
+      };
+    }
+    if (gatewayStatus.state === 'reconnecting') {
+      return {
+        title: t('status.gatewayReconnectingTitle'),
+        message: t('status.gatewayReconnectingMessage'),
+      };
+    }
+    return null;
+  }, [gatewayStatus.state, t]);
 
   const isEmpty = messages.length === 0 && !sending;
 
@@ -126,9 +141,34 @@ export function Chat({
       )}
       style={embedded ? undefined : { height: 'calc(100vh - 2.5rem)' }}
     >
+      {gatewayStatusNotice && (
+        <div
+          className={cn(
+            'pointer-events-none absolute left-1/2 z-40 w-[min(92%,36rem)] -translate-x-1/2',
+            hideToolbar ? 'top-3' : 'top-14',
+          )}
+        >
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 shadow-lg backdrop-blur">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-full bg-amber-500/15 p-1.5 text-amber-700 dark:text-amber-300">
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">
+                  {gatewayStatusNotice.title}
+                </div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {gatewayStatusNotice.message}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
       {!hideToolbar && (
-        <div className="flex shrink-0 items-center justify-end px-4 py-2">
+        <div className="flex shrink-0 items-center justify-start px-4 py-2">
           <ChatToolbar />
         </div>
       )}
@@ -170,7 +210,7 @@ export function Chat({
               )}
 
               {/* Activity indicator: waiting for next AI turn after tool execution */}
-              {sending && pendingFinal && !shouldRenderStreaming && (
+              {showThinking && sending && pendingFinal && !shouldRenderStreaming && (
                 <ActivityIndicator phase="tool_processing" />
               )}
 

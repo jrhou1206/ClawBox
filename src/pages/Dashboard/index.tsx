@@ -17,7 +17,6 @@ import {
   RotateCw,
   Server,
   Square,
-  Stethoscope,
   Timer,
   Wifi,
   XCircle,
@@ -143,12 +142,12 @@ function EnvCheckItem({ label, check }: { label: string; check: EnvCheck }) {
     );
 
   return (
-    <div className="flex items-center justify-between gap-2 py-2">
-      <div className="flex items-center gap-2.5 min-w-0">
+    <div className="flex items-center justify-between gap-2 py-2.5 border-b border-border/40 last:border-0">
+      <div className="flex items-center gap-2 min-w-0">
         {icon}
         <span className="text-sm font-medium text-foreground/80">{label}</span>
       </div>
-      <span className="text-xs text-muted-foreground truncate max-w-[160px]">
+      <span className="text-xs text-muted-foreground truncate max-w-[140px]">
         {check.message}
       </span>
     </div>
@@ -172,7 +171,9 @@ export function Dashboard() {
     gateway: { status: 'checking', message: '' },
   });
   const [processStats, setProcessStats] = useState<GatewayProcessStats>({ pid: null, rssBytes: null });
-  const [diagnosing, setDiagnosing] = useState(false);
+  const [forceStopping, setForceStopping] = useState(false);
+  const [stoppingTask, setStoppingTask] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
 
   const effectiveError = gatewayStatus.error || lastError || null;
@@ -262,17 +263,49 @@ export function Dashboard() {
     }
   }, [t]);
 
-  const diagnose = useCallback(async () => {
-    setDiagnosing(true);
+  const forceRestart = useCallback(async () => {
+    setForceStopping(true);
     try {
-      await Promise.all([refreshEnvChecks(), checkHealth(), refreshProcessStats()]);
+      await stopGateway();
+      // 等待停止完成
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      await startGateway();
       toast.success(t('dashboard:ops.done'));
     } catch (error) {
       toast.error(String(error));
     } finally {
-      setDiagnosing(false);
+      setForceStopping(false);
     }
-  }, [checkHealth, refreshEnvChecks, refreshProcessStats, t]);
+  }, [startGateway, stopGateway, t]);
+
+  const stopCurrentTask = useCallback(async () => {
+    setStoppingTask(true);
+    try {
+      // 调用gateway RPC中断当前任务
+      await invokeIpc('gateway:rpc', 'chat.interrupt', {});
+      toast.success(t('dashboard:ops.done'));
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setStoppingTask(false);
+    }
+  }, [t]);
+
+  const resetConfig = useCallback(async () => {
+    setResetting(true);
+    try {
+      // Only reset ClawBox app settings, do NOT restart gateway
+      // settings:reset already syncs proxy internally if needed
+      const result = await invokeIpc<{ success: boolean }>('settings:reset');
+      if (result.success) {
+        toast.success(t('dashboard:ops.done'));
+      }
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setResetting(false);
+    }
+  }, [t]);
 
   const openControlUi = useCallback(async () => {
     try {
@@ -465,105 +498,159 @@ export function Dashboard() {
             </div>
           </Card>
 
-          {/* Row 2: Three Columns */}
+          {/* Row 2: Left 2/3 + Right 1/3 */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Col 1: Quick Operations */}
-            <Card className="rounded-xl border-0 shadow-none bg-black/[0.02] dark:bg-white/[0.02]">
-              <div className="p-4">
-                <div className="flex items-center gap-2 mb-3">
+            {/* Left 2/3: Quick Operations */}
+            <Card className="rounded-xl border-0 shadow-none bg-black/[0.02] dark:bg-white/[0.02] lg:col-span-2 lg:row-span-2">
+              <div className="p-6 h-full flex flex-col">
+                <div className="flex items-center gap-2 mb-4">
                   <Zap className="h-4 w-4 text-amber-500" />
                   <h3 className="text-sm font-semibold">{t('dashboard:ops.title')}</h3>
                 </div>
-                <div className="space-y-2">
-                  <div className="grid grid-cols-3 gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isBusy || gatewayStatus.state === 'running'}
-                      onClick={() => void startGateway()}
-                      className="h-9 text-xs rounded-lg border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-                    >
-                      <Play className="h-3.5 w-3.5 mr-1" />
-                      {t('dashboard:ops.start')}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isBusy || gatewayStatus.state !== 'running'}
-                      onClick={() => void stopGateway()}
-                      className="h-9 text-xs rounded-lg border-red-500/30 text-red-600 hover:bg-red-500/10 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                    >
-                      <Square className="h-3.5 w-3.5 mr-1" />
-                      {t('dashboard:ops.stop')}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isBusy}
-                      onClick={() => void restartGateway()}
-                      className="h-9 text-xs rounded-lg border-sky-500/30 text-sky-600 hover:bg-sky-500/10 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
-                    >
-                      <RotateCw className="h-3.5 w-3.5 mr-1" />
-                      {t('dashboard:ops.restart')}
-                    </Button>
-                  </div>
+                <div className="grid grid-cols-2 gap-3 flex-1 content-start">
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={diagnosing}
-                    onClick={() => void diagnose()}
-                    className="w-full h-9 text-xs rounded-lg border-amber-500/30 text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+                    disabled={isBusy || gatewayStatus.state === 'running'}
+                    onClick={() => void startGateway()}
+                    className="h-auto py-4 px-4 flex items-center gap-3 justify-start rounded-lg border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
                   >
-                    {diagnosing ? (
-                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    <Play className="h-5 w-5 shrink-0" />
+                    <div className="flex flex-col items-start text-left">
+                      <span className="text-xs font-semibold">{t('dashboard:ops.start')}</span>
+                      <span className="text-[10px] text-muted-foreground font-normal">启动网关服务</span>
+                    </div>
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isBusy || gatewayStatus.state !== 'running'}
+                    onClick={() => void stopGateway()}
+                    className="h-auto py-4 px-4 flex items-center gap-3 justify-start rounded-lg border-red-500/30 text-red-600 hover:bg-red-500/10 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                  >
+                    <Square className="h-5 w-5 shrink-0" />
+                    <div className="flex flex-col items-start text-left">
+                      <span className="text-xs font-semibold">{t('dashboard:ops.stop')}</span>
+                      <span className="text-[10px] text-muted-foreground font-normal">停止网关服务</span>
+                    </div>
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isBusy}
+                    onClick={() => void restartGateway()}
+                    className="h-auto py-4 px-4 flex items-center gap-3 justify-start rounded-lg border-sky-500/30 text-sky-600 hover:bg-sky-500/10 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
+                  >
+                    <RotateCw className="h-5 w-5 shrink-0" />
+                    <div className="flex flex-col items-start text-left">
+                      <span className="text-xs font-semibold">{t('dashboard:ops.restart')}</span>
+                      <span className="text-[10px] text-muted-foreground font-normal">平滑重启网关</span>
+                    </div>
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={forceStopping}
+                    onClick={() => void forceRestart()}
+                    className="h-auto py-4 px-4 flex items-center gap-3 justify-start rounded-lg border-orange-500/30 text-orange-600 hover:bg-orange-500/10 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
+                  >
+                    {forceStopping ? (
+                      <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
                     ) : (
-                      <Stethoscope className="h-3.5 w-3.5 mr-1.5" />
+                      <RefreshCw className="h-5 w-5 shrink-0" />
                     )}
-                    {diagnosing ? t('dashboard:ops.diagnosing') : t('dashboard:ops.diagnose')}
+                    <div className="flex flex-col items-start text-left">
+                      <span className="text-xs font-semibold">
+                        {forceStopping ? t('dashboard:ops.forceStopping') : t('dashboard:ops.forceRestart')}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-normal">强制终止并重启</span>
+                    </div>
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={stoppingTask || gatewayStatus.state !== 'running'}
+                    onClick={() => void stopCurrentTask()}
+                    className="h-auto py-4 px-4 flex items-center gap-3 justify-start rounded-lg border-rose-500/30 text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300"
+                  >
+                    {stoppingTask ? (
+                      <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+                    ) : (
+                      <Square className="h-5 w-5 shrink-0" />
+                    )}
+                    <div className="flex flex-col items-start text-left">
+                      <span className="text-xs font-semibold">
+                        {stoppingTask ? t('dashboard:ops.stoppingTask') : t('dashboard:ops.stopTask')}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-normal">中断当前运行任务</span>
+                    </div>
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={resetting}
+                    onClick={() => void resetConfig()}
+                    className="h-auto py-4 px-4 flex items-center gap-3 justify-start rounded-lg border-purple-500/30 text-purple-600 hover:bg-purple-500/10 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
+                  >
+                    {resetting ? (
+                      <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+                    ) : (
+                      <RotateCw className="h-5 w-5 shrink-0" />
+                    )}
+                    <div className="flex flex-col items-start text-left">
+                      <span className="text-xs font-semibold">
+                        {resetting ? t('dashboard:ops.resetting') : t('dashboard:ops.resetConfig')}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-normal">恢复到初始配置</span>
+                    </div>
                   </Button>
                 </div>
               </div>
             </Card>
 
-            {/* Col 2: Environment Checks */}
+            {/* Right 1/3 Top: Environment Checks */}
             <Card className="rounded-xl border-0 shadow-none bg-black/[0.02] dark:bg-white/[0.02]">
-              <div className="p-4">
+              <div className="p-5">
                 <div className="flex items-center gap-2 mb-3">
                   <Wifi className="h-4 w-4 text-sky-500" />
                   <h3 className="text-sm font-semibold">{t('dashboard:env.title')}</h3>
                 </div>
-                <div className="divide-y divide-border/50">
+                <div>
                   <EnvCheckItem label={t('dashboard:env.node')} check={envChecks.node} />
                   <EnvCheckItem label={t('dashboard:env.openclaw')} check={envChecks.openclaw} />
-                  <EnvCheckItem label={t('dashboard:env.gateway')} check={envChecks.gateway} />
                 </div>
               </div>
             </Card>
 
-            {/* Col 3: System Info (Local Machine) */}
+            {/* Right 1/3 Bottom: System Info */}
             <Card className="rounded-xl border-0 shadow-none bg-black/[0.02] dark:bg-white/[0.02]">
-              <div className="p-4">
+              <div className="p-5">
                 <div className="flex items-center gap-2 mb-3">
                   <Monitor className="h-4 w-4 text-violet-500" />
                   <h3 className="text-sm font-semibold">{t('dashboard:system.title')}</h3>
                 </div>
                 {systemInfo ? (
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-muted-foreground">{t('dashboard:system.os')}</span>
-                      <span className="font-medium text-foreground truncate max-w-[160px]">{systemInfo.osName}</span>
+                  <div className="space-y-2.5 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground text-xs">{t('dashboard:system.os')}</span>
+                      <span className="font-medium text-foreground text-xs truncate max-w-[120px]">{systemInfo.osName}</span>
                     </div>
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-muted-foreground">{t('dashboard:system.cpu')}</span>
-                      <span className="font-medium text-foreground truncate max-w-[160px]">{systemInfo.cpuModel.split(' ').slice(0, 3).join(' ')}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground text-xs">{t('dashboard:system.arch')}</span>
+                      <span className="font-medium text-foreground text-xs">{systemInfo.arch}</span>
                     </div>
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-muted-foreground">{t('dashboard:system.totalMemory')}</span>
-                      <span className="font-medium text-foreground">{formatBytes(systemInfo.totalMemory)}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground text-xs">{t('dashboard:system.cpu')}</span>
+                      <span className="font-medium text-foreground text-xs truncate max-w-[120px]">{systemInfo.cpuModel.split(' ').slice(0, 3).join(' ')}</span>
                     </div>
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-muted-foreground">{t('dashboard:system.arch')}</span>
-                      <span className="font-medium text-foreground">{systemInfo.arch}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground text-xs">{t('dashboard:system.totalMemory')}</span>
+                      <span className="font-medium text-foreground text-xs">{formatBytes(systemInfo.totalMemory)}</span>
                     </div>
                   </div>
                 ) : (

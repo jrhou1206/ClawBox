@@ -77,6 +77,27 @@ export async function handleGatewayRoutes(
     return true;
   }
 
+  if (url.pathname === '/api/gateway/process-stats' && req.method === 'GET') {
+    const status = ctx.gatewayManager.getStatus();
+    const pid = status.pid ?? null;
+    let rssBytes: number | null = null;
+    if (pid != null) {
+      try {
+        const { app } = await import('electron');
+        const metrics = app.getAppMetrics();
+        const match = metrics.find((m) => m.pid === pid);
+        if (match) {
+          // workingSetSize is in KB, convert to bytes
+          rssBytes = match.memory.workingSetSize * 1024;
+        }
+      } catch {
+        // ignore – metrics unavailable
+      }
+    }
+    sendJson(res, 200, { pid, rssBytes });
+    return true;
+  }
+
   if (url.pathname === '/api/chat/send-with-media' && req.method === 'POST') {
     try {
       const body = await parseJsonBody<{
